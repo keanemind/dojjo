@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "WebFetch(domain:tus.io)",
-      "Bash(cargo build:*)",
-      "Bash(cargo test:*)"
-    ]
-  }
-}
