@@ -114,28 +114,38 @@ After pull, you may need normal JJ commands (e.g. `jj workspace update-stale`) s
 
 **When to use it:** "I want a checkout of this dojo on **this** machine in **this** directory."
 
+- **First time** this dojo exists on the machine: cold join (download from server, then add workspace).
+- **Already** have a linked workspace or finished `create` for this dojo here: warm join — same command, but only adds a workspace locally (no re-download).
+
 **Before you run it**
 
 - `--into` is an **empty** directory (no `.jj`, no existing JJ repo there).
 - You have a dojo id (and server URL).
-- You do **not** need an existing JJ repo anywhere on the machine.
+- You do **not** need an existing JJ repo anywhere on the machine for a **cold** join; for a **warm** join the dojo must already be set up under `DOJJO_HOME`.
 - Do **not** run join from a directory that is already a JJ workspace for this or another project — join is not "attach my existing repo to a dojo." That conflates two repos and bypasses the bridge.
 
 **What happens**
 
+**Cold join** (first time this dojo is set up on this machine):
+
 1. Fetch dojo metadata from the server (id, Git remote URL, etc.).
 2. Create the hidden sync host layout under this machine's `DOJJO_HOME` for that dojo.
-3. **Download** shared repo state from the server into this machine's sync host (full replica on first join; incremental when the server already has newer state).
-4. **Create a new JJ workspace** at `--into` backed by **this machine's replica** of the shared repo (new workspace name in the shared view, unique across the dojo).
-5. Record local `workspace_store` paths for **this** machine only.
-6. Fetch Git objects from the dojo bare remote so Git-backed repos are usable locally.
-7. Link `--into/.jj` to the dojo so sync commands resolve the right server and sync host.
+3. Download shared repo state from the server into this machine's sync host.
+4. Fetch Git objects from the dojo bare remote so Git-backed repos are usable locally.
+5. Create a new JJ workspace at `--into` backed by this machine's replica (new workspace name in the shared view, unique across the dojo).
+6. Link `--into/.jj/dojjo.json` so sync commands resolve the right server and sync host.
+
+**Warm join** (dojo already set up on this machine):
+
+Dojjo runs `jj workspace add` against the existing local sync host. The practical benefit over running `jj workspace add` yourself is that you only need the **dojo id** and an empty `--into` (from a neutral directory). You do not need to `cd` into an existing linked checkout or know where `_default` lives under `DOJJO_HOME`.
+
+If you are already in a linked workspace, plain `jj workspace add` is equivalent for repo behavior.
 
 **What join is not**
 
 - Not `jj clone` from another directory on the same machine.
 - Not "run from the creator's project tree so `jj -R` shares their repo."
-- Not adding a second workspace name to a repo you already had without going through the server replica.
+- Not a substitute for `dojjo dev sync` when you need this machine's replica to catch up with the server (all workspaces share the same sync repo until sync runs).
 
 **Workspace naming**
 

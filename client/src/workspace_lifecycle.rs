@@ -285,7 +285,7 @@ pub fn ensure_sync_host_workspace(
     Ok(default_ws)
 }
 
-/// Add a new user workspace on a cold machine (no pre-existing JJ checkout on this host).
+/// Add a user workspace backed by the local sync host (`jj workspace add` + repo pointer normalize).
 pub fn cold_join_user_workspace(
     dojo_home: &Path,
     into: &Path,

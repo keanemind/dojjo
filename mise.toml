@@ -56,6 +56,11 @@ description = "Regression: cold join with extra table heads"
 depends = ["build"]
 run = "bash scripts/e2e-cold-join-extra-heads.sh"
 
+[tasks."e2e:warm-join"]
+description = "Regression: warm join must not recreate stale op_heads"
+depends = ["build"]
+run = "bash scripts/e2e-warm-join.sh"
+
 [tasks."e2e:sync-safety"]
 description = "Chaos e2e: composite sync stays healthy under concurrent edits"
 depends = ["build"]
@@ -78,5 +83,6 @@ run = """
 bash scripts/e2e-mvp.sh
 bash scripts/e2e-composite-git-jj.sh
 bash scripts/e2e-cold-join-extra-heads.sh
+bash scripts/e2e-warm-join.sh
 bash scripts/e2e-idle-sync-no-new-op.sh
 """

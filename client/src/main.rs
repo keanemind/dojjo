@@ -53,10 +53,12 @@ enum Commands {
     ///
     /// Other workspaces on this DOJJO_HOME get updated `.jj/repo` pointers. Server dojo unchanged.
     Undojjo,
-    /// Join a dojo: pull into `~/.dojjo/dojos/{id}/_default`, add a workspace at `--into`.
+    /// Join a dojo: add a workspace at `--into` backed by this machine's sync host.
     ///
-    /// Cold start: do not run from inside an existing Jujutsu workspace; `--into` must be empty.
-    /// Background sync is enabled by default on first join of this dojo on this machine.
+    /// First join on this machine pulls the server mirror into `~/.dojjo/dojos/{id}/_default`.
+    /// When the dojo is already set up locally, join only runs `jj workspace add` (warm join).
+    /// Do not run from inside an existing Jujutsu workspace; `--into` must be empty.
+    /// Background sync is enabled by default on first create/join of this dojo on this machine.
     Join {
         #[arg(long)]
         dojo_id: String,
