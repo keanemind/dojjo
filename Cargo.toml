@@ -1,0 +1,3 @@
+[workspace]
+members = ["sync-server", "tus-server", "dojjo-mirror", "client"]
+resolver = "2"

@@ -1,0 +1,9 @@
+[package]
+name = "dojjo-mirror"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+jj-lib = "0.38.0"
+prost = "0.14"
+hex = "0.4"

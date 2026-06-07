@@ -1,0 +1,22 @@
+[Unit]
+Description=Dojjo sync server
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dojjo
+Group=dojjo
+EnvironmentFile=/etc/dojjo/sync-server.env
+ExecStart=/opt/dojjo/bin/sync-server
+WorkingDirectory=/var/lib/dojjo
+Restart=on-failure
+RestartSec=5
+# sync-server stores dojo data and SQLite under DOJJO_DATA_DIR / DATABASE_URL.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/dojjo
+
+[Install]
+WantedBy=multi-user.target

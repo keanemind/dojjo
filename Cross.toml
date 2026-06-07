@@ -1,0 +1,8 @@
+# cross-rs (https://github.com/cross-rs/cross) config for `sync-server` Linux binaries.
+# Requires a running Docker engine (Colima, Docker Desktop, etc.).
+#
+# Before building: ./scripts/init-sync-server-db.sh
+# Deploy script sets DATABASE_URL to sync-server/data.db for sqlx::query! at compile time.
+
+[build.env]
+passthrough = ["DATABASE_URL"]

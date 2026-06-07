@@ -1,0 +1,6 @@
+/target
+.env
+.env.*
+!.env.example
+data.db*
+dojjo-data

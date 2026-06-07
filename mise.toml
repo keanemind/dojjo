@@ -1,0 +1,82 @@
+#:schema https://mise.jdx.dev/schema/mise.json
+#
+# Pin polyglot toolchains and common dev tasks. From repo root:
+#   mise install && mise run setup
+
+[vars]
+rust_version = "1.92"
+python_version = "3.12"
+jj_version = "0.38.0"
+
+[tools]
+# Faster installs for cargo: tools (sqlx-cli).
+"cargo-binstall" = "latest"
+rust = "{{vars.rust_version}}"
+python = "{{vars.python_version}}"
+jujutsu = "{{vars.jj_version}}"
+"cargo:sqlx-cli" = "0.8.6"
+
+[tasks."fetch-jj-ref"]
+description = "Shallow-clone pinned jj tag into jj-<sha>/ for AI/dev reference (local only)"
+run = "./scripts/fetch-jj-ref.sh {{vars.jj_version}}"
+
+[tasks."init-db"]
+description = "Create sync-server/data.db for sqlx compile-time query checks"
+run = "./scripts/init-sync-server-db.sh"
+
+[tasks.setup]
+description = "After clone or new migrations: sqlx offline DB for compile-time checks"
+depends = ["init-db"]
+
+[tasks.build]
+description = "Build dojjo client and sync-server binaries"
+depends = ["init-db"]
+run = "cargo build --bin dojjo --bin sync-server"
+
+[tasks."test:rust"]
+description = "Rust workspace unit tests"
+run = "cargo test --workspace"
+
+[tasks.test]
+description = "Rust workspace unit tests"
+depends = ["test:rust"]
+
+[tasks."e2e:mvp"]
+description = "Two-peer smoke: create, cold join, dev sync"
+depends = ["build"]
+run = "bash scripts/e2e-mvp.sh"
+
+[tasks."e2e:composite"]
+description = "Composite git+jj sync acceptance"
+depends = ["build"]
+run = "bash scripts/e2e-composite-git-jj.sh"
+
+[tasks."e2e:cold-join-extra-heads"]
+description = "Regression: cold join with extra table heads"
+depends = ["build"]
+run = "bash scripts/e2e-cold-join-extra-heads.sh"
+
+[tasks."e2e:sync-safety"]
+description = "Chaos e2e: composite sync stays healthy under concurrent edits"
+depends = ["build"]
+run = "bash scripts/e2e-sync-safety.sh"
+
+[tasks."e2e:idle-sync-no-new-op"]
+description = "Idle sync: no new jj op when already converged"
+depends = ["build"]
+run = "bash scripts/e2e-idle-sync-no-new-op.sh"
+
+[tasks."e2e:idle-sync-stress"]
+description = "Idle sync stress gate (40 rounds by default)"
+depends = ["build"]
+run = "bash scripts/e2e-idle-sync-stress.sh"
+
+[tasks."e2e:all"]
+description = "Main e2e gates (excludes investigate/prove debug scripts)"
+depends = ["build"]
+run = """
+bash scripts/e2e-mvp.sh
+bash scripts/e2e-composite-git-jj.sh
+bash scripts/e2e-cold-join-extra-heads.sh
+bash scripts/e2e-idle-sync-no-new-op.sh
+"""

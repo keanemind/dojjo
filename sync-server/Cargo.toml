@@ -1,0 +1,34 @@
+[package]
+name = "sync-server"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dojjo-mirror = { path = "../dojjo-mirror" }
+async-trait = "0.1"
+uuid = { version = "1", features = ["v4"] }
+tus-server = { path = "../tus-server" }
+bytes = "1"
+axum = { version = "0.8.8", features = ["macros"] }
+jj-lib = "0.38.0"
+utoipa = "5"
+utoipa-axum = "0.2.0"
+tokio = { version = "1", features = ["full"] }
+serde = "1.0.228"
+serde_json = "1.0.149"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", features = ["std", "env-filter"] }
+tower-http = { version = "0.6.8", features = ["trace"] }
+petname = "2.0.2"
+rand = "^0.8"
+sqlx = { version = "0.8", features = [ "runtime-tokio", "sqlite", "migrate" ] }
+anyhow = "1.0"
+thiserror = "2.0.18"
+sha2 = "0.10"
+hex = "0.4"
+prost = "0.14"
+dotenvy = "0.15.7"
+socket2 = "0.5"
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,3 @@
+[env]
+# Compile-time sqlx macros: same file as runtime default (see sync-server/src/main.rs).
+DATABASE_URL = { value = "data.db", relative = true }

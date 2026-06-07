@@ -1,0 +1,15 @@
+# Reference JJ tree (read-only, huge; not needed to build sync-server)
+jj-*
+
+target
+**/target
+**/*.rs.bk
+
+.git
+.DS_Store
+
+# Local dev artifacts (runtime data lives on the Dokku storage mount)
+sync-server/dojjo-data
+sync-server/data.db
+sync-server/.env
+o
