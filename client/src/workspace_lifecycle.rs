@@ -286,7 +286,7 @@ pub fn ensure_default_workspace_loadable(
     Ok(default_ws)
 }
 
-/// Add a user workspace backed by the local repo (`jj workspace add` + repo pointer normalize).
+/// Add a user workspace backed by the local repo (`jj workspace add`).
 pub fn cold_join_user_workspace(
     dojo_home: &Path,
     into: &Path,
@@ -318,12 +318,15 @@ pub fn cold_join_user_workspace(
     ensure_empty_workspace_root(into)?;
     jj_exec::workspace_add_with_repository(&default_ws, into, workspace_name)?;
 
-    // `jj workspace add` may write an absolute repo pointer (macOS /var vs /private/var).
-    // Normalize to a relative pointer when possible so dojjo and jj agree on disk layout.
     let user_jj = find_jj_dir_from(into)?;
     let jj_repo_folder = config::default_workspace_jj_repo_folder(dojo_home)?;
-    write_jj_repo_file_pointing_at_folder(&user_jj, &jj_repo_folder)
-        .with_context(|| format!("normalize repo pointer for workspace {}", into.display()))?;
+    let got = config::resolve_repo_path_at_jj(&user_jj)?;
+    anyhow::ensure!(
+        got == jj_repo_folder,
+        "jj workspace add repo pointer must target dojo local repo (got {}, want {})",
+        got.display(),
+        jj_repo_folder.display()
+    );
     Ok(())
 }
 

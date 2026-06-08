@@ -336,7 +336,7 @@ pub fn resolve_repo_path_at_jj(jj_dir: &Path) -> anyhow::Result<PathBuf> {
         repo_path.display()
     );
 
-    // JJ may store an absolute path when /var vs /private/var (macOS) prevents a relative one.
+    // JJ stores an absolute canonical path; relative paths are also accepted when reading.
     let joined = if rel.starts_with('/') {
         PathBuf::from(rel)
     } else {
@@ -383,7 +383,7 @@ pub fn workspace_root_from_jj(jj_dir: &Path) -> anyhow::Result<PathBuf> {
         .with_context(|| format!("canonicalize workspace root {}", root.display()))
 }
 
-/// Write `user_workspace_jj_repo_file` pointing at `jj_repo_folder`.
+/// Write absolute canonical path into `jj_dir/repo` pointer file (same as `jj workspace add`).
 pub fn write_jj_repo_file_pointing_at_folder(jj_dir: &Path, jj_repo_folder: &Path) -> anyhow::Result<()> {
     assert!(jj_dir.as_os_str().len() > 0, "jj_dir must not be empty");
     assert!(
@@ -400,14 +400,18 @@ pub fn write_jj_repo_file_pointing_at_folder(jj_dir: &Path, jj_repo_folder: &Pat
         canon_repo != canon_jj,
         "repo pointer must target a different path than .jj itself"
     );
+    assert!(
+        canon_repo.is_absolute(),
+        "repo pointer target must be an absolute path"
+    );
 
-    let rel = pathdiff::diff_paths(&canon_repo, &canon_jj)
-        .with_context(|| format!("relative path from {} to {}", canon_jj.display(), canon_repo.display()))?;
-    let rel = rel.to_str().context("repo pointer path must be UTF-8")?;
-    anyhow::ensure!(!rel.is_empty(), "repo pointer path must not be empty");
+    let abs = canon_repo
+        .to_str()
+        .context("repo pointer path must be UTF-8")?;
+    anyhow::ensure!(!abs.is_empty(), "repo pointer path must not be empty");
 
     let pointer = canon_jj.join("repo");
-    std::fs::write(&pointer, rel.as_bytes())
+    std::fs::write(&pointer, abs.as_bytes())
         .with_context(|| format!("write repo pointer {}", pointer.display()))?;
     Ok(())
 }
@@ -709,8 +713,11 @@ mod tests {
         fs::create_dir_all(host.join("store")).unwrap();
         fs::create_dir_all(ws.join(".jj")).unwrap();
         write_jj_repo_file_pointing_at_folder(&ws.join(".jj"), &host).unwrap();
+        let abs = host.canonicalize().unwrap();
+        let raw = std::fs::read_to_string(ws.join(".jj").join("repo")).unwrap();
+        assert_eq!(raw.trim(), abs.to_str().unwrap());
         let got = resolve_repo_path_at_jj(&ws.join(".jj")).unwrap();
-        assert_eq!(got, host.canonicalize().unwrap());
+        assert_eq!(got, abs);
     }
 
     #[test]
