@@ -52,7 +52,7 @@ fi
 e2e_stop_background_sync_for_home "$DOJJO_HOME_A"
 (cd "$ORIGIN" && e2e_dojjo_for_home "$DOJJO_HOME_A" dev sync)
 
-SYNC_REPO="$(e2e_physical_sync_repo "$DOJJO_HOME_A" "$DOJO_ID")"
+DEFAULT_WORKSPACE_JJ_REPO_FOLDER="$(e2e_default_workspace_jj_repo_folder "$DOJJO_HOME_A" "$DOJO_ID")"
 OP_BEFORE="$(e2e_jj_current_operation_id "$ORIGIN")"
 if [[ -z "$OP_BEFORE" ]]; then
   echo "failed to read operation id before local commit" >&2
@@ -71,12 +71,12 @@ if [[ "$OP_BEFORE" == "$OP_AFTER" ]]; then
   exit 1
 fi
 
-STALE_HEAD="${SYNC_REPO}/op_heads/heads/${OP_BEFORE}"
+STALE_HEAD="${DEFAULT_WORKSPACE_JJ_REPO_FOLDER}/op_heads/heads/${OP_BEFORE}"
 if [[ -f "$STALE_HEAD" ]]; then
   echo "expected stale op head $OP_BEFORE removed after local commit" >&2
   exit 1
 fi
-if [[ ! -f "${SYNC_REPO}/op_store/operations/${OP_AFTER}" ]]; then
+if [[ ! -f "${DEFAULT_WORKSPACE_JJ_REPO_FOLDER}/op_store/operations/${OP_AFTER}" ]]; then
   echo "expected local op $OP_AFTER in op_store" >&2
   exit 1
 fi
@@ -97,7 +97,7 @@ if [[ -f "$STALE_HEAD" ]]; then
   echo "warm join must not recreate stale op head $OP_BEFORE" >&2
   exit 1
 fi
-if [[ ! -f "${SYNC_REPO}/op_store/operations/${OP_AFTER}" ]]; then
+if [[ ! -f "${DEFAULT_WORKSPACE_JJ_REPO_FOLDER}/op_store/operations/${OP_AFTER}" ]]; then
   echo "warm join must preserve local op $OP_AFTER in op_store" >&2
   exit 1
 fi

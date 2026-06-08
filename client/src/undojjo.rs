@@ -26,7 +26,7 @@ pub async fn run(cwd: &Path) -> anyhow::Result<()> {
     let dojo_home = resolve_dojo_home(&user_workspace, &user_jj)?;
     let dojo_id = resolve_dojo_id(&dojo_home, &user_jj)?;
 
-    if !config::workspace_rehomed_to_dojo(&user_jj, &dojo_home)? {
+    if !config::user_workspace_jj_repo_file_points_at_local_repo(&user_jj, &dojo_home)? {
         cleanup_metadata_only(&dojo_home, &user_jj)?;
         println!(
             "removed incomplete dojjo setup for {dojo_id} (repo was not re-homed); server dojo unchanged"
@@ -79,10 +79,10 @@ async fn run_full_undojjo(
 ) -> anyhow::Result<()> {
     assert!(!dojo_id.is_empty(), "dojo_id must not be empty");
 
-    let default_host = default_workspace_root(dojo_home);
-    let default_host = default_host
+    let default_ws = default_workspace_root(dojo_home);
+    let default_ws = default_ws
         .canonicalize()
-        .with_context(|| format!("canonicalize {}", default_host.display()))?;
+        .with_context(|| format!("canonicalize {}", default_ws.display()))?;
     let dojjo_base = config::dojjo_home_base()?
         .canonicalize()
         .context("canonicalize dojjo home base")?;
@@ -92,9 +92,9 @@ async fn run_full_undojjo(
         .with_context(|| format!("canonicalize {}", user_workspace.display()))?;
 
     anyhow::ensure!(
-        user_workspace != default_host,
+        user_workspace != default_ws,
         "dojjo undojjo must not run from the sentinel _default workspace ({})",
-        default_host.display()
+        default_ws.display()
     );
 
     let current_name = jj_exec::current_workspace_name(&user_workspace)?;
@@ -113,20 +113,20 @@ async fn run_full_undojjo(
         Some(root) => root,
         None => {
             // Repair stale local workspace-store entry for `default` after repo-base changes.
-            let sync_repo = config::resolve_repo_path_at_jj(user_jj)?;
+            let jj_repo_folder = config::resolve_repo_path_at_jj(user_jj)?;
             jj_workspace_store::register_workspace_path(
-                &sync_repo,
+                &jj_repo_folder,
                 DEFAULT_WORKSPACE_NAME,
-                &default_host,
+                &default_ws,
             )
             .context("repair workspace_store path for default")?;
             jj_exec::workspace_root_for_name(&user_workspace, DEFAULT_WORKSPACE_NAME)?
         }
     };
     anyhow::ensure!(
-        path_is_under(&sentinel_root, &default_host),
+        path_is_under(&sentinel_root, &default_ws),
         "workspace {DEFAULT_WORKSPACE_NAME} must be rooted at {} (got {})",
-        default_host.display(),
+        default_ws.display(),
         sentinel_root.display()
     );
     anyhow::ensure!(
@@ -155,7 +155,7 @@ async fn run_full_undojjo(
     );
 
     for (name, root) in &workspace_roots {
-        if root.starts_with(&default_host) {
+        if root.starts_with(&default_ws) {
             continue;
         }
         let jj = root.join(".jj");
@@ -177,8 +177,8 @@ async fn run_full_undojjo(
     jj_exec::workspace_rename(&user_workspace, DEFAULT_WORKSPACE_NAME)
         .context("jj workspace rename to default")?;
 
-    let sync_jj = default_host.join(".jj");
-    let new_repo = workspace_lifecycle::unrehome_repo_to_user(user_jj, &sync_jj)
+    let default_workspace_jj_dir = default_ws.join(".jj");
+    let new_repo = workspace_lifecycle::move_jj_repo_folder_from_default_workspace_to_user_workspace(user_jj, &default_workspace_jj_dir)
         .context("move physical repo back to user workspace")?;
     assert!(
         new_repo == config::resolve_repo_path_at_jj(user_jj)?,
@@ -188,14 +188,14 @@ async fn run_full_undojjo(
         &workspace_roots,
         &current_name,
         &user_workspace,
-        &default_host,
+        &default_ws,
         &new_repo,
     )?;
 
     repoint_sibling_workspaces(
         &workspace_roots,
         &user_workspace,
-        &default_host,
+        &default_ws,
         &new_repo,
     )
     .context("repoint sibling workspace repo pointers")?;
@@ -232,16 +232,16 @@ fn rewrite_local_workspace_store_after_unrehome(
     workspace_roots: &[(String, PathBuf)],
     current_name_before_rename: &str,
     user_workspace: &Path,
-    default_host: &Path,
+    default_workspace_root: &Path,
     new_repo: &Path,
 ) -> anyhow::Result<()> {
     assert!(!current_name_before_rename.is_empty(), "current workspace name must not be empty");
     assert!(user_workspace.is_dir(), "user workspace must be a directory");
-    assert!(default_host.is_dir(), "default host must be a directory");
+    assert!(default_workspace_root.is_dir(), "default host must be a directory");
     assert!(new_repo.is_dir(), "new_repo must be a directory");
 
     for (name, root) in workspace_roots {
-        if root.starts_with(default_host) {
+        if root.starts_with(default_workspace_root) {
             continue;
         }
         let stored_name = if name == current_name_before_rename {

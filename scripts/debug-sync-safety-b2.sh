@@ -53,8 +53,8 @@ rm -rf "$CLONE"
 mkdir -p "$CLONE"
 e2e_cold_join "$DOJJO_HOME_B" "$DOJO_ID" "$CLONE" "peer-b-B2" "$NEUTRAL"
 
-SYNC_REPO_A="$(e2e_physical_sync_repo "$DOJJO_HOME_A" "$DOJO_ID")"
-SYNC_REPO_B="$(e2e_physical_sync_repo "$DOJJO_HOME_B" "$DOJO_ID")"
+DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A="$(e2e_default_workspace_jj_repo_folder "$DOJJO_HOME_A" "$DOJO_ID")"
+DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B="$(e2e_default_workspace_jj_repo_folder "$DOJJO_HOME_B" "$DOJO_ID")"
 
 origin_git="$(e2e_resolve_git_dir_from_repo "${ORIGIN}/.jj/repo")"
 clone_git="$(e2e_resolve_git_dir_from_repo "${CLONE}/.jj/repo")"

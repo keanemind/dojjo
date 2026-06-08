@@ -141,8 +141,8 @@ fn try_dojo_home_for_canonical_repo(canon_repo: &Path) -> Option<PathBuf> {
             continue;
         }
         let home = ent.path();
-        let sync_repo = config::sync_repo_root(&home).ok()?;
-        if sync_repo == target {
+        let jj_repo_folder = config::default_workspace_jj_repo_folder(&home).ok()?;
+        if jj_repo_folder == target {
             return Some(home);
         }
     }
@@ -206,23 +206,23 @@ fn workspace_lines(ctx: &WorkspaceCtx) -> Vec<Line> {
     let repo_meta = ctx.jj_dir.join("repo");
     if repo_meta.is_dir() {
         lines.push(Line::warn(
-            ".jj/repo is a directory (not re-homed to a dojo sync host)",
+            ".jj/repo is a directory (not re-homed to a local repo)",
             Some(ctx.canon_repo.display().to_string()),
         ));
     } else if repo_meta.is_file() {
         let rehomed = ctx
             .dojo_home
             .as_ref()
-            .and_then(|home| config::workspace_rehomed_to_dojo(&ctx.jj_dir, home).ok())
+            .and_then(|home| config::user_workspace_jj_repo_file_points_at_local_repo(&ctx.jj_dir, home).ok())
             .unwrap_or(false);
         if rehomed {
             lines.push(Line::ok_detail(
-                ".jj/repo pointer targets dojo sync host",
+                ".jj/repo pointer targets local repo",
                 ctx.canon_repo.display().to_string(),
             ));
         } else {
             lines.push(Line::warn(
-                ".jj/repo pointer does not target this dojo's sync host",
+                ".jj/repo pointer does not target this dojo's local repo",
                 Some(ctx.canon_repo.display().to_string()),
             ));
         }
@@ -282,13 +282,13 @@ fn local_dojo_lines(dojo_home: &Path) -> Vec<Line> {
         }
     }
 
-    match config::sync_repo_root(dojo_home) {
-        Ok(sync) => lines.push(Line::ok_detail(
-            "sync host repo (_default/.jj/repo)",
-            sync.display().to_string(),
+    match config::default_workspace_jj_repo_folder(dojo_home) {
+        Ok(jj_repo_folder) => lines.push(Line::ok_detail(
+            "local repo (_default/.jj/repo)",
+            jj_repo_folder.display().to_string(),
         )),
         Err(e) => lines.push(Line::warn(
-            "sync host repo not initialized",
+            "local repo not initialized",
             Some(e.to_string()),
         )),
     }

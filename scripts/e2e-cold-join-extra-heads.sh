@@ -106,13 +106,13 @@ JOIN_OUT="$(cd "$NEUTRAL" && e2e_dojjo_for_home "$DOJJO_HOME_B" join \
   --name "mac-lan-c" 2>&1)"
 echo "$JOIN_OUT"
 
-SYNC_REPO_B="$(e2e_physical_sync_repo "$DOJJO_HOME_B" "$DOJO_ID")"
-if [[ ! -d "$SYNC_REPO_B/store/extra/heads" ]]; then
-  echo "peer B sync repo must have store/extra/heads after cold join" >&2
+DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B="$(e2e_default_workspace_jj_repo_folder "$DOJJO_HOME_B" "$DOJO_ID")"
+if [[ ! -d "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B/store/extra/heads" ]]; then
+  echo "peer B local repo must have store/extra/heads after cold join" >&2
   exit 1
 fi
-if ! compgen -G "$SYNC_REPO_B/store/extra/heads/*" >/dev/null 2>&1; then
-  echo "peer B sync repo must have at least one extra head marker" >&2
+if ! compgen -G "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B/store/extra/heads/*" >/dev/null 2>&1; then
+  echo "peer B local repo must have at least one extra head marker" >&2
   exit 1
 fi
 

@@ -27,17 +27,17 @@ print(pathlib.Path(sys.argv[1]).resolve())
 PY
 }
 
-# Physical `.jj/repo` directory at the hidden sync host (not a pointer file).
-e2e_physical_sync_repo() {
+# Physical `.jj/repo` directory at the `_default` workspace (not a pointer file).
+e2e_default_workspace_jj_repo_folder() {
   local home="$1"
   local dojo_id="$2"
   if [[ -z "$home" || -z "$dojo_id" ]]; then
-    echo "e2e_physical_sync_repo: home and dojo_id required" >&2
+    echo "e2e_default_workspace_jj_repo_folder: home and dojo_id required" >&2
     return 1
   fi
   local jj_repo="${home}/dojos/${dojo_id}/_default/.jj/repo"
   if [[ ! -e "$jj_repo" ]]; then
-    echo "missing sync repo at $jj_repo" >&2
+    echo "missing local repo at $jj_repo" >&2
     return 1
   fi
   e2e_canonicalize_path "$jj_repo"
@@ -66,7 +66,7 @@ e2e_assert_distinct_paths() {
     ib="$(stat -c '%i' "$cb")"
   fi
   if [[ "$ia" == "$ib" ]]; then
-    echo "same inode ($ia) for peer sync repos:" >&2
+    echo "same inode ($ia) for peer local-repo jj_repo_folder paths:" >&2
     echo "  A: $ca" >&2
     echo "  B: $cb" >&2
     return 1
@@ -227,7 +227,7 @@ print(len(entries), data.get("revision", ""))
 '
 }
 
-# Count mirror-eligible files under physical sync repo (same walk as e2e_mirror_sha256_index).
+# Count mirror-eligible files under physical local repo (same walk as e2e_mirror_sha256_index).
 e2e_mirror_local_file_count() {
   e2e_mirror_sha256_index "$1" | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))'
 }
@@ -259,10 +259,10 @@ with path.open("a", encoding="utf-8") as f:
 PY
 }
 
-# SHA256 index of mirror-eligible files under physical sync repo (matches client walk rules).
+# SHA256 index of mirror-eligible files under physical local repo (matches client walk rules).
 e2e_mirror_sha256_index() {
-  local sync_repo="$1"
-  python3 - "$sync_repo" <<'PY'
+  local jj_repo_folder="$1"
+  python3 - "$jj_repo_folder" <<'PY'
 import hashlib, json, pathlib, sys
 
 repo = pathlib.Path(sys.argv[1])
@@ -322,12 +322,12 @@ for k in keys:
 PY
 }
 
-# Paths where local sync repo differs from server manifest entries.
+# Paths where local local repo differs from server manifest entries.
 e2e_mirror_local_vs_server_diff() {
-  local sync_repo="$1"
+  local jj_repo_folder="$1"
   local api_base="$2"
   local dojo_id="$3"
-  python3 - "$sync_repo" "$api_base" "$dojo_id" <<'PY'
+  python3 - "$jj_repo_folder" "$api_base" "$dojo_id" <<'PY'
 import hashlib, json, subprocess, sys, urllib.request
 
 repo, api_base, dojo_id = sys.argv[1:4]
@@ -412,15 +412,15 @@ e2e_assert_git_dir_usable() {
   "$GIT" -C "$git_dir" fsck --no-progress >/dev/null 2>&1 || true
 }
 
-# Distinct physical sync hosts, then shared repo semantics (Git HEAD for non-colocated).
+# Distinct physical local-repo jj_repo_folder paths, then shared repo semantics (Git HEAD for non-colocated).
 e2e_assert_peers_converged() {
   local origin_ws="$1"
   local clone_ws="$2"
   local layout="${3:-}"
-  local sync_repo_a="$4"
-  local sync_repo_b="$5"
+  local jj_repo_folder_a="$4"
+  local jj_repo_folder_b="$5"
 
-  e2e_assert_distinct_paths "$sync_repo_a" "$sync_repo_b"
+  e2e_assert_distinct_paths "$jj_repo_folder_a" "$jj_repo_folder_b"
 
   if [[ "$layout" == "colocated" ]]; then
     (cd "$origin_ws" && "$JJ" git import)

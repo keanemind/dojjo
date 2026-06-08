@@ -17,7 +17,7 @@ pub const CREATE_PROGRESS_FILE: &str = "create_progress.json";
 pub struct GlobalConfig {
     pub api_base: String,
 }
-/// Hidden JJ workspace that hosts the physical `.jj/repo` (sync target).
+/// `_default` workspace directory under dojo home (hosts the local repo).
 pub const DEFAULT_WORKSPACE_DIR: &str = "_default";
 /// JJ's reserved default workspace name in the shared view.
 pub const DEFAULT_WORKSPACE_NAME: &str = "default";
@@ -127,8 +127,8 @@ pub fn is_dojo_create_complete(dojo_home: &Path) -> bool {
     dojo_config_path(dojo_home).is_file()
 }
 
-/// User `.jj/repo` is a pointer at the sync host for this dojo.
-pub fn workspace_rehomed_to_dojo(user_jj: &Path, dojo_home: &Path) -> anyhow::Result<bool> {
+/// User `.jj/repo` is a pointer in the local repo for this dojo.
+pub fn user_workspace_jj_repo_file_points_at_local_repo(user_jj: &Path, dojo_home: &Path) -> anyhow::Result<bool> {
     let repo_path = user_jj.join("repo");
     if repo_path.is_dir() {
         return Ok(false);
@@ -137,8 +137,8 @@ pub fn workspace_rehomed_to_dojo(user_jj: &Path, dojo_home: &Path) -> anyhow::Re
         return Ok(false);
     }
     let canon = resolve_repo_path_at_jj(user_jj)?;
-    let sync_repo = sync_repo_root(dojo_home)?;
-    Ok(canon == sync_repo)
+    let jj_repo_folder = default_workspace_jj_repo_folder(dojo_home)?;
+    Ok(canon == jj_repo_folder)
 }
 
 /// Find an in-progress create for this workspace (link file or `create_progress.json` scan).
@@ -161,7 +161,7 @@ pub fn find_resumable_create(
         if load_create_progress(&home)?.is_some() {
             return Ok(Some((link.dojo_id, home)));
         }
-        if workspace_rehomed_to_dojo(&jj_dir, &home)? || sync_repo_root(&home).is_ok() {
+        if user_workspace_jj_repo_file_points_at_local_repo(&jj_dir, &home)? || default_workspace_jj_repo_folder(&home).is_ok() {
             return Ok(Some((link.dojo_id, home)));
         }
     }
@@ -284,7 +284,7 @@ pub fn dojo_home(dojo_id: &str) -> anyhow::Result<PathBuf> {
     Ok(base.join("dojos").join(dojo_id))
 }
 
-/// Workspace root for the hidden `default` workspace (physical repo host).
+/// Workspace root for the hidden `default` workspace (local repo jj_repo_folder).
 pub fn default_workspace_root(dojo_home: &Path) -> PathBuf {
     assert!(dojo_home.as_os_str().len() > 0, "dojo_home must not be empty");
     dojo_home.join(DEFAULT_WORKSPACE_DIR)
@@ -383,16 +383,16 @@ pub fn workspace_root_from_jj(jj_dir: &Path) -> anyhow::Result<PathBuf> {
         .with_context(|| format!("canonicalize workspace root {}", root.display()))
 }
 
-/// Write relative path from `jj_dir/.jj/repo` pointer file to `canonical_repo`.
-pub fn write_repo_pointer(jj_dir: &Path, canonical_repo: &Path) -> anyhow::Result<()> {
+/// Write `user_workspace_jj_repo_file` pointing at `jj_repo_folder`.
+pub fn write_jj_repo_file_pointing_at_folder(jj_dir: &Path, jj_repo_folder: &Path) -> anyhow::Result<()> {
     assert!(jj_dir.as_os_str().len() > 0, "jj_dir must not be empty");
     assert!(
-        canonical_repo.is_dir(),
-        "canonical_repo must be an existing directory"
+        jj_repo_folder.is_dir(),
+        "jj_repo_folder must be an existing directory"
     );
-    let canon_repo = canonical_repo
+    let canon_repo = jj_repo_folder
         .canonicalize()
-        .with_context(|| format!("canonicalize {}", canonical_repo.display()))?;
+        .with_context(|| format!("canonicalize {}", jj_repo_folder.display()))?;
     let canon_jj = jj_dir
         .canonicalize()
         .with_context(|| format!("canonicalize {}", jj_dir.display()))?;
@@ -412,12 +412,12 @@ pub fn write_repo_pointer(jj_dir: &Path, canonical_repo: &Path) -> anyhow::Resul
     Ok(())
 }
 
-/// Physical repo used by dojjo sync: `_default/.jj/repo` (directory, not a pointer).
-pub fn sync_repo_root(dojo_home: &Path) -> anyhow::Result<PathBuf> {
+/// Local repo path: `_default/.jj/repo` (`jj_repo_folder`, not a pointer file).
+pub fn default_workspace_jj_repo_folder(dojo_home: &Path) -> anyhow::Result<PathBuf> {
     let jj_dir = default_workspace_root(dojo_home).join(".jj");
     if !jj_dir.join("repo").exists() {
         anyhow::bail!(
-            "dojo sync repo not initialized at {} (run dojjo create or join first)",
+            "dojo local repo not initialized at {} (run dojjo create or join first)",
             jj_dir.display()
         );
     }
@@ -425,7 +425,7 @@ pub fn sync_repo_root(dojo_home: &Path) -> anyhow::Result<PathBuf> {
     let pointer_path = jj_dir.join("repo");
     assert!(
         pointer_path.is_dir(),
-        "sync host .jj/repo must be a directory, not a pointer (got {})",
+        "default workspace jj_repo_folder must be a directory, not a pointer (got {})",
         pointer_path.display()
     );
     Ok(canon)
@@ -536,11 +536,11 @@ pub fn find_dojo_home_for_workspace(start: &Path) -> anyhow::Result<PathBuf> {
     if let Some(link) = read_workspace_link(&jj_dir)? {
         let home = dojo_home(&link.dojo_id)?;
         if dojo_config_path(&home).is_file() {
-            if workspace_rehomed_to_dojo(&jj_dir, &home)? {
+            if user_workspace_jj_repo_file_points_at_local_repo(&jj_dir, &home)? {
                 return Ok(home);
             }
             anyhow::bail!(
-                "workspace {} is linked to dojo {} but its .jj/repo is not tracked by DOJJO_HOME={} (expected sync repo under {})",
+                "workspace {} is linked to dojo {} but its .jj/repo is not tracked by DOJJO_HOME={} (expected local repo under {})",
                 start.display(),
                 link.dojo_id,
                 dojjo_home_base()?.display(),
@@ -570,12 +570,12 @@ fn find_dojo_home_for_canonical_repo(canon_repo: &Path) -> anyhow::Result<PathBu
             continue;
         }
         let home = ent.path();
-        let sync_repo = sync_repo_root(&home);
-        if sync_repo.is_err() {
+        let jj_repo_folder = default_workspace_jj_repo_folder(&home);
+        if jj_repo_folder.is_err() {
             continue;
         }
-        let sync_repo = sync_repo.expect("sync_repo_root ok");
-        if sync_repo == target {
+        let jj_repo_folder = jj_repo_folder.expect("default_workspace_jj_repo_folder ok");
+        if jj_repo_folder == target {
             return Ok(home);
         }
     }
@@ -590,16 +590,16 @@ fn find_dojo_home_for_canonical_repo(canon_repo: &Path) -> anyhow::Result<PathBu
 pub fn repoint_sibling_workspaces(
     workspace_roots: &[(String, PathBuf)],
     user_workspace_root: &Path,
-    default_host_root: &Path,
+    default_workspace_root_path: &Path,
     new_repo: &Path,
 ) -> anyhow::Result<()> {
     assert!(new_repo.is_dir(), "new_repo must be a directory");
     let user_workspace_root = user_workspace_root
         .canonicalize()
         .with_context(|| format!("canonicalize {}", user_workspace_root.display()))?;
-    let default_host_root = default_host_root
+    let default_workspace_root_path = default_workspace_root_path
         .canonicalize()
-        .with_context(|| format!("canonicalize {}", default_host_root.display()))?;
+        .with_context(|| format!("canonicalize {}", default_workspace_root_path.display()))?;
     let new_repo = new_repo
         .canonicalize()
         .with_context(|| format!("canonicalize {}", new_repo.display()))?;
@@ -612,13 +612,13 @@ pub fn repoint_sibling_workspaces(
         if root == user_workspace_root {
             continue;
         }
-        if root.starts_with(&default_host_root) {
+        if root.starts_with(&default_workspace_root_path) {
             continue;
         }
         assert!(root.is_dir(), "sibling workspace root must be a directory");
         let jj_dir = root.join(".jj");
         assert!(jj_dir.is_dir(), "sibling workspace must have .jj/");
-        write_repo_pointer(&jj_dir, &new_repo)
+        write_jj_repo_file_pointing_at_folder(&jj_dir, &new_repo)
             .with_context(|| format!("repoint workspace {name} at {}", root.display()))?;
         let link = jj_dir.join(DOJJO_LINK_FILE);
         if link.is_file() {
@@ -708,7 +708,7 @@ mod tests {
         let ws = dir.path().join("ws");
         fs::create_dir_all(host.join("store")).unwrap();
         fs::create_dir_all(ws.join(".jj")).unwrap();
-        write_repo_pointer(&ws.join(".jj"), &host).unwrap();
+        write_jj_repo_file_pointing_at_folder(&ws.join(".jj"), &host).unwrap();
         let got = resolve_repo_path_at_jj(&ws.join(".jj")).unwrap();
         assert_eq!(got, host.canonicalize().unwrap());
     }
@@ -748,7 +748,7 @@ mod tests {
         };
         save_config(&dojo_home, &cfg).unwrap();
         write_workspace_link(&ws_jj, "d1").unwrap();
-        write_repo_pointer(&ws_jj, &unrelated_repo).unwrap();
+        write_jj_repo_file_pointing_at_folder(&ws_jj, &unrelated_repo).unwrap();
 
         let _restore = DojjoHomeRestore(std::env::var_os("DOJJO_HOME"));
         unsafe {

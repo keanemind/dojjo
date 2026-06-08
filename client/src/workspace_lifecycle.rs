@@ -1,4 +1,5 @@
-//! Re-home the physical `.jj/repo` under `dojo_home/_default`, mint frozen `default`, user pointer workspace.
+//! Move the user's `jj_repo_folder` into the `_default` workspace under dojo home, then turn
+//! the user workspace into a non-`default` checkout whose `.jj/repo` is a pointer file.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -6,12 +7,12 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 
 use crate::config::{
-    self, default_workspace_root, find_jj_dir_from, write_repo_pointer, DEFAULT_WORKSPACE_NAME,
+    self, default_workspace_root, find_jj_dir_from, write_jj_repo_file_pointing_at_folder, DEFAULT_WORKSPACE_NAME,
 };
 use crate::jj_exec;
 
 /// Local-only bootstrap workspace name (not for user edits); used when `_default` lacks a working copy.
-pub const SYNC_HOST_BOOTSTRAP_NAME: &str = "_dojjo_sync_host";
+pub const DEFAULT_WORKSPACE_BOOTSTRAP_NAME: &str = "_dojjo_default_bootstrap";
 
 pub fn has_working_copy(workspace_root: &Path) -> bool {
     workspace_root.join(".jj").join("working_copy").exists()
@@ -46,11 +47,11 @@ fn ensure_empty_workspace_root(dest: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Move the physical repo directory to `sync_jj/repo` and write a pointer at `user_jj/repo`.
-fn relocate_repo_to_sync_host(
+/// Move the physical repo directory to `default_workspace_jj_dir/repo` and write a pointer at `user_jj/repo`.
+fn move_jj_repo_folder_from_user_workspace_to_default_workspace(
     user_jj: &Path,
     _user_workspace: &Path,
-    sync_jj: &Path,
+    default_workspace_jj_dir: &Path,
 ) -> anyhow::Result<PathBuf> {
     let user_repo_entry = user_jj.join("repo");
     assert!(
@@ -58,8 +59,8 @@ fn relocate_repo_to_sync_host(
         "user workspace must host the physical repo directory before relocation"
     );
 
-    fs::create_dir_all(sync_jj).with_context(|| format!("create_dir_all {}", sync_jj.display()))?;
-    let dest_repo = sync_jj.join("repo");
+    fs::create_dir_all(default_workspace_jj_dir).with_context(|| format!("create_dir_all {}", default_workspace_jj_dir.display()))?;
+    let dest_repo = default_workspace_jj_dir.join("repo");
 
     if dest_repo.exists() {
         if dest_repo.is_file() {
@@ -85,17 +86,17 @@ fn relocate_repo_to_sync_host(
         user_jj.join("repo").display()
     );
 
-    let sync_repo = dest_repo
+    let jj_repo_folder = dest_repo
         .canonicalize()
         .with_context(|| format!("canonicalize {}", dest_repo.display()))?;
-    write_repo_pointer(user_jj, &sync_repo)?;
-    Ok(sync_repo)
+    write_jj_repo_file_pointing_at_folder(user_jj, &jj_repo_folder)?;
+    Ok(jj_repo_folder)
 }
 
-/// Move the physical repo from `sync_jj/repo` back to `user_jj/repo` (inverse of [`relocate_repo_to_sync_host`]).
-pub fn unrehome_repo_to_user(user_jj: &Path, sync_jj: &Path) -> anyhow::Result<PathBuf> {
+/// Move the physical repo from `default_workspace_jj_dir/repo` back to `user_jj/repo` (inverse of [`move_jj_repo_folder_from_user_workspace_to_default_workspace`]).
+pub fn move_jj_repo_folder_from_default_workspace_to_user_workspace(user_jj: &Path, default_workspace_jj_dir: &Path) -> anyhow::Result<PathBuf> {
     assert!(user_jj.as_os_str().len() > 0, "user_jj must not be empty");
-    assert!(sync_jj.as_os_str().len() > 0, "sync_jj must not be empty");
+    assert!(default_workspace_jj_dir.as_os_str().len() > 0, "default_workspace_jj_dir must not be empty");
 
     let user_repo_entry = user_jj.join("repo");
     assert!(
@@ -104,11 +105,11 @@ pub fn unrehome_repo_to_user(user_jj: &Path, sync_jj: &Path) -> anyhow::Result<P
         user_repo_entry.display()
     );
 
-    let sync_repo = sync_jj.join("repo");
+    let jj_repo_folder = default_workspace_jj_dir.join("repo");
     assert!(
-        sync_repo.is_dir(),
-        "sync .jj/repo must be a directory before unrehome (got {})",
-        sync_repo.display()
+        jj_repo_folder.is_dir(),
+        "default workspace .jj/repo must be a directory before unrehome (got {})",
+        jj_repo_folder.display()
     );
 
     fs::remove_file(&user_repo_entry)
@@ -118,10 +119,10 @@ pub fn unrehome_repo_to_user(user_jj: &Path, sync_jj: &Path) -> anyhow::Result<P
         "user .jj/repo pointer must be gone before move"
     );
 
-    fs::rename(&sync_repo, &user_repo_entry).with_context(|| {
+    fs::rename(&jj_repo_folder, &user_repo_entry).with_context(|| {
         format!(
             "move repo {} -> {}",
-            sync_repo.display(),
+            jj_repo_folder.display(),
             user_repo_entry.display()
         )
     })?;
@@ -131,9 +132,9 @@ pub fn unrehome_repo_to_user(user_jj: &Path, sync_jj: &Path) -> anyhow::Result<P
         .with_context(|| format!("canonicalize {}", user_repo_entry.display()))?;
     assert!(user_repo.is_dir(), "user .jj/repo must be a directory after unrehome");
     assert!(
-        !sync_repo.exists(),
-        "sync .jj/repo must be gone after move (still at {})",
-        sync_repo.display()
+        !jj_repo_folder.exists(),
+        "default workspace .jj/repo must be gone after move (still at {})",
+        jj_repo_folder.display()
     );
     Ok(user_repo)
 }
@@ -142,8 +143,8 @@ const GIT_BACKEND_TYPE: &str = "git";
 const GIT_TARGET_INTERNAL: &str = "git";
 
 /// True when the repo uses the Git backend (`store/type` == `git`).
-pub fn repo_uses_git_backend(sync_repo: &Path) -> anyhow::Result<bool> {
-    let store_type = sync_repo.join("store").join("type");
+pub fn repo_uses_git_backend(jj_repo_folder: &Path) -> anyhow::Result<bool> {
+    let store_type = jj_repo_folder.join("store").join("type");
     if !store_type.is_file() {
         return Ok(false);
     }
@@ -153,41 +154,41 @@ pub fn repo_uses_git_backend(sync_repo: &Path) -> anyhow::Result<bool> {
 }
 
 /// Write host-local `store/git_target` and ensure Git objects live under `store/git/`.
-pub fn write_host_git_target(sync_repo: &Path) -> anyhow::Result<()> {
-    assert!(sync_repo.is_dir(), "sync_repo must be a directory");
-    let store = sync_repo.join("store");
-    assert!(store.is_dir(), "sync repo must have store/");
+pub fn write_host_git_target(jj_repo_folder: &Path) -> anyhow::Result<()> {
+    assert!(jj_repo_folder.is_dir(), "jj_repo_folder must be a directory");
+    let store = jj_repo_folder.join("store");
+    assert!(store.is_dir(), "local repo must have store/");
     let git_target_path = store.join("git_target");
     std::fs::write(&git_target_path, GIT_TARGET_INTERNAL.as_bytes())
         .with_context(|| format!("write {}", git_target_path.display()))?;
     Ok(())
 }
 
-fn assert_internal_git_store(sync_repo: &Path) -> anyhow::Result<()> {
-    let raw = std::fs::read_to_string(sync_repo.join("store").join("git_target"))
+fn assert_internal_git_store(jj_repo_folder: &Path) -> anyhow::Result<()> {
+    let raw = std::fs::read_to_string(jj_repo_folder.join("store").join("git_target"))
         .context("read store/git_target")?;
     let trimmed = raw.trim();
     anyhow::ensure!(
         trimmed == GIT_TARGET_INTERNAL,
-        "dojo sync host requires internal git store (git_target must be {GIT_TARGET_INTERNAL:?}, got {trimmed:?})"
+        "local repo requires internal git store (git_target must be {GIT_TARGET_INTERNAL:?}, got {trimmed:?})"
     );
-    let git_store = sync_repo.join("store").join("git");
+    let git_store = jj_repo_folder.join("store").join("git");
     anyhow::ensure!(
         git_store.is_dir(),
-        "git backend sync host must have {}",
+        "git backend local repo must have {}",
         git_store.display()
     );
     Ok(())
 }
 
-/// Non-colocated git backend on the sync host: `git_target` = `git`, objects under `store/git/`.
-pub fn ensure_sync_host_non_colocated_git(sync_repo: &Path) -> anyhow::Result<()> {
-    assert!(sync_repo.is_dir(), "sync_repo must be a directory");
-    if !repo_uses_git_backend(sync_repo)? {
+/// Non-colocated git backend on the local repo: `git_target` = `git`, objects under `store/git/`.
+pub fn ensure_local_repo_non_colocated_git(jj_repo_folder: &Path) -> anyhow::Result<()> {
+    assert!(jj_repo_folder.is_dir(), "jj_repo_folder must be a directory");
+    if !repo_uses_git_backend(jj_repo_folder)? {
         return Ok(());
     }
-    write_host_git_target(sync_repo)?;
-    let git_store = sync_repo.join("store").join("git");
+    write_host_git_target(jj_repo_folder)?;
+    let git_store = jj_repo_folder.join("store").join("git");
     crate::git_sync::ensure_git_dir_layout(&git_store)
         .with_context(|| format!("bootstrap {}", git_store.display()))?;
     Ok(())
@@ -222,15 +223,15 @@ pub fn ensure_dojo_after_create(
 
     let user_jj = config::find_jj_dir_from(user_workspace)?;
     let default_ws = default_workspace_root(dojo_home);
-    let sync_jj = default_ws.join(".jj");
+    let default_workspace_jj_dir = default_ws.join(".jj");
     fs::create_dir_all(&default_ws)
         .with_context(|| format!("create_dir_all {}", default_ws.display()))?;
 
-    if config::workspace_rehomed_to_dojo(&user_jj, dojo_home)? {
-        let sync_repo = config::sync_repo_root(dojo_home)?;
-        assert!(sync_repo.is_dir(), "sync repo must exist after re-home");
-        ensure_sync_host_non_colocated_git(&sync_repo)?;
-        return Ok(sync_repo);
+    if config::user_workspace_jj_repo_file_points_at_local_repo(&user_jj, dojo_home)? {
+        let jj_repo_folder = config::default_workspace_jj_repo_folder(dojo_home)?;
+        assert!(jj_repo_folder.is_dir(), "local repo must exist after re-home");
+        ensure_local_repo_non_colocated_git(&jj_repo_folder)?;
+        return Ok(jj_repo_folder);
     }
 
     ensure_empty_workspace_root(&default_ws)?;
@@ -247,17 +248,17 @@ pub fn ensure_dojo_after_create(
     assert!(user_repo.is_dir(), "repo must still be local before re-home");
     disable_git_colocation_before_rehome(user_workspace, &user_repo)?;
 
-    let sync_repo = relocate_repo_to_sync_host(&user_jj, user_workspace, &sync_jj)?;
+    let jj_repo_folder = move_jj_repo_folder_from_user_workspace_to_default_workspace(&user_jj, user_workspace, &default_workspace_jj_dir)?;
     assert!(
-        sync_repo == config::sync_repo_root(dojo_home)?,
-        "sync repo path must match dojo home _default host"
+        jj_repo_folder == config::default_workspace_jj_repo_folder(dojo_home)?,
+        "local repo path must match dojo home _default host"
     );
-    ensure_sync_host_non_colocated_git(&sync_repo)?;
-    Ok(sync_repo)
+    ensure_local_repo_non_colocated_git(&jj_repo_folder)?;
+    Ok(jj_repo_folder)
 }
 
 /// Return `_default` workspace root, creating a loadable working copy via `jj -R` when needed.
-pub fn ensure_sync_host_workspace(
+pub fn ensure_default_workspace_loadable(
     dojo_home: &Path,
     anchor_workspace: &Path,
 ) -> anyhow::Result<PathBuf> {
@@ -278,14 +279,14 @@ pub fn ensure_sync_host_workspace(
     jj_exec::workspace_add_with_repository(
         anchor_workspace,
         &default_ws,
-        SYNC_HOST_BOOTSTRAP_NAME,
+        DEFAULT_WORKSPACE_BOOTSTRAP_NAME,
     )?;
     ensure_sentinel_default_workspace_registered(dojo_home)?;
     ensure_local_workspace_registered(dojo_home, anchor_workspace)?;
     Ok(default_ws)
 }
 
-/// Add a user workspace backed by the local sync host (`jj workspace add` + repo pointer normalize).
+/// Add a user workspace backed by the local repo (`jj workspace add` + repo pointer normalize).
 pub fn cold_join_user_workspace(
     dojo_home: &Path,
     into: &Path,
@@ -296,55 +297,55 @@ pub fn cold_join_user_workspace(
         "workspace name must not be {DEFAULT_WORKSPACE_NAME}"
     );
     anyhow::ensure!(
-        workspace_name != SYNC_HOST_BOOTSTRAP_NAME,
-        "workspace name must not be {SYNC_HOST_BOOTSTRAP_NAME}"
+        workspace_name != DEFAULT_WORKSPACE_BOOTSTRAP_NAME,
+        "workspace name must not be {DEFAULT_WORKSPACE_BOOTSTRAP_NAME}"
     );
 
-    let sync_host = bootstrap_sync_host_after_pull(dojo_home)?;
+    let default_ws = bootstrap_default_workspace_after_pull(dojo_home)?;
     assert!(
-        sync_host.as_os_str().len() > 0,
-        "sync host path must be non-empty"
+        default_ws.as_os_str().len() > 0,
+        "default workspace path must be non-empty"
     );
 
-    if jj_exec::workspace_exists_at_repository(&sync_host, workspace_name)? {
+    if jj_exec::workspace_exists_at_repository(&default_ws, workspace_name)? {
         anyhow::bail!(
             "workspace name {workspace_name:?} already exists in this dojo; pick another --name"
         );
     }
 
     ensure_empty_workspace_root(into)?;
-    jj_exec::workspace_add_with_repository(&sync_host, into, workspace_name)?;
+    jj_exec::workspace_add_with_repository(&default_ws, into, workspace_name)?;
 
     // `jj workspace add` may write an absolute repo pointer (macOS /var vs /private/var).
     // Normalize to a relative pointer when possible so dojjo and jj agree on disk layout.
     let user_jj = find_jj_dir_from(into)?;
-    let sync_repo = config::sync_repo_root(dojo_home)?;
-    write_repo_pointer(&user_jj, &sync_repo)
+    let jj_repo_folder = config::default_workspace_jj_repo_folder(dojo_home)?;
+    write_jj_repo_file_pointing_at_folder(&user_jj, &jj_repo_folder)
         .with_context(|| format!("normalize repo pointer for workspace {}", into.display()))?;
     Ok(())
 }
 
 /// After mirror pull, make `_default` loadable by `jj` and return its workspace root.
-pub fn bootstrap_sync_host_after_pull(dojo_home: &Path) -> anyhow::Result<PathBuf> {
+pub fn bootstrap_default_workspace_after_pull(dojo_home: &Path) -> anyhow::Result<PathBuf> {
     let default_ws = default_workspace_root(dojo_home);
     fs::create_dir_all(&default_ws)
         .with_context(|| format!("create_dir_all {}", default_ws.display()))?;
 
-    let sync_jj = default_ws.join(".jj");
-    fs::create_dir_all(&sync_jj).with_context(|| format!("create_dir_all {}", sync_jj.display()))?;
+    let default_workspace_jj_dir = default_ws.join(".jj");
+    fs::create_dir_all(&default_workspace_jj_dir).with_context(|| format!("create_dir_all {}", default_workspace_jj_dir.display()))?;
 
-    let sync_repo = config::sync_repo_root(dojo_home)?;
-    assert!(sync_repo.is_dir(), "sync repo must exist after pull");
+    let jj_repo_folder = config::default_workspace_jj_repo_folder(dojo_home)?;
+    assert!(jj_repo_folder.is_dir(), "local repo must exist after pull");
 
     if !has_working_copy(&default_ws) {
-        seed_sync_host_working_copy(&sync_jj, DEFAULT_WORKSPACE_NAME)?;
+        seed_default_workspace_working_copy(&default_workspace_jj_dir, DEFAULT_WORKSPACE_NAME)?;
     }
 
     ensure_sentinel_default_workspace_registered(dojo_home)?;
 
     assert!(
         has_working_copy(&default_ws),
-        "sync host must have working_copy after bootstrap"
+        "default workspace must have working_copy after bootstrap"
     );
     Ok(default_ws)
 }
@@ -355,9 +356,9 @@ fn ensure_sentinel_default_workspace_registered(dojo_home: &Path) -> anyhow::Res
     if !has_working_copy(&default_ws) {
         return Ok(());
     }
-    let sync_repo = config::sync_repo_root(dojo_home)?;
+    let jj_repo_folder = config::default_workspace_jj_repo_folder(dojo_home)?;
     crate::jj_workspace_store::register_workspace_path(
-        &sync_repo,
+        &jj_repo_folder,
         DEFAULT_WORKSPACE_NAME,
         &default_ws,
     )
@@ -379,18 +380,18 @@ fn ensure_local_workspace_registered(
         .canonicalize()
         .with_context(|| format!("canonicalize {}", anchor_workspace.display()))?;
     let jj_dir = config::find_jj_dir_from(&anchor_workspace)?;
-    if !config::workspace_rehomed_to_dojo(&jj_dir, dojo_home)? {
+    if !config::user_workspace_jj_repo_file_points_at_local_repo(&jj_dir, dojo_home)? {
         return Ok(());
     }
     let name = jj_exec::current_workspace_name(&anchor_workspace)?;
     if name == DEFAULT_WORKSPACE_NAME {
         return Ok(());
     }
-    if name == SYNC_HOST_BOOTSTRAP_NAME {
+    if name == DEFAULT_WORKSPACE_BOOTSTRAP_NAME {
         return Ok(());
     }
-    let sync_repo = config::sync_repo_root(dojo_home)?;
-    crate::jj_workspace_store::register_workspace_path(&sync_repo, &name, &anchor_workspace)
+    let jj_repo_folder = config::default_workspace_jj_repo_folder(dojo_home)?;
+    crate::jj_workspace_store::register_workspace_path(&jj_repo_folder, &name, &anchor_workspace)
         .with_context(|| {
             format!(
                 "register jj workspace store path for {name} at {}",
@@ -399,16 +400,16 @@ fn ensure_local_workspace_registered(
         })
 }
 
-/// Minimal `working_copy/` so `jj` can open the pulled repo at the sync host (no anchor workspace).
-fn seed_sync_host_working_copy(sync_jj: &Path, workspace_name: &str) -> anyhow::Result<()> {
-    assert!(sync_jj.as_os_str().len() > 0, "sync_jj must not be empty");
+/// Minimal `working_copy/` so `jj` can open the pulled repo in the local repo (no anchor workspace).
+fn seed_default_workspace_working_copy(default_workspace_jj_dir: &Path, workspace_name: &str) -> anyhow::Result<()> {
+    assert!(default_workspace_jj_dir.as_os_str().len() > 0, "default_workspace_jj_dir must not be empty");
     anyhow::ensure!(!workspace_name.is_empty(), "workspace_name must not be empty");
 
-    let sync_repo = config::resolve_repo_path_at_jj(sync_jj)?;
-    let op_id = read_repo_head_operation_id(&sync_repo)?;
+    let jj_repo_folder = config::resolve_repo_path_at_jj(default_workspace_jj_dir)?;
+    let op_id = read_repo_head_operation_id(&jj_repo_folder)?;
     assert!(!op_id.is_empty(), "head operation id must not be empty");
 
-    let wc = sync_jj.join("working_copy");
+    let wc = default_workspace_jj_dir.join("working_copy");
     fs::create_dir_all(&wc).with_context(|| format!("create_dir_all {}", wc.display()))?;
 
     let type_path = wc.join("type");
@@ -422,8 +423,8 @@ fn seed_sync_host_working_copy(sync_jj: &Path, workspace_name: &str) -> anyhow::
     Ok(())
 }
 
-fn read_repo_head_operation_id(sync_repo: &Path) -> anyhow::Result<Vec<u8>> {
-    let heads_dir = sync_repo.join("op_heads").join("heads");
+fn read_repo_head_operation_id(jj_repo_folder: &Path) -> anyhow::Result<Vec<u8>> {
+    let heads_dir = jj_repo_folder.join("op_heads").join("heads");
     anyhow::ensure!(
         heads_dir.is_dir(),
         "repo missing op_heads/heads at {}",
@@ -486,23 +487,23 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn unrehome_roundtrip_with_relocate() {
+    fn move_jj_repo_folder_roundtrip() {
         let dir = tempdir().unwrap();
         let user_ws = dir.path().join("user");
-        let sync_ws = dir.path().join("sync");
+        let sync_ws = dir.path().join("default_workspace");
         let user_jj = user_ws.join(".jj");
-        let sync_jj = sync_ws.join(".jj");
+        let default_workspace_jj_dir = sync_ws.join(".jj");
         let host_repo = user_jj.join("repo");
         fs::create_dir_all(host_repo.join("store")).unwrap();
 
-        relocate_repo_to_sync_host(&user_jj, &user_ws, &sync_jj).unwrap();
+        move_jj_repo_folder_from_user_workspace_to_default_workspace(&user_jj, &user_ws, &default_workspace_jj_dir).unwrap();
         assert!(user_jj.join("repo").is_file());
-        assert!(sync_jj.join("repo").is_dir());
+        assert!(default_workspace_jj_dir.join("repo").is_dir());
 
-        let back = unrehome_repo_to_user(&user_jj, &sync_jj).unwrap();
+        let back = move_jj_repo_folder_from_default_workspace_to_user_workspace(&user_jj, &default_workspace_jj_dir).unwrap();
         assert_eq!(back, host_repo.canonicalize().unwrap());
         assert!(user_jj.join("repo").is_dir());
-        assert!(!sync_jj.join("repo").exists());
+        assert!(!default_workspace_jj_dir.join("repo").exists());
     }
 
     #[test]

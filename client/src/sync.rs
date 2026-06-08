@@ -1,4 +1,4 @@
-//! Push/pull the dojo sync repo at `~/.dojjo/dojos/{id}/_default/.jj/repo`.
+//! Push/pull the dojo local repo at `~/.dojjo/dojos/{id}/_default/.jj/repo`.
 
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
@@ -37,20 +37,20 @@ pub async fn run_for_dojo_home(client: &Client, dojo_home: &Path) -> anyhow::Res
     } = cfg;
     let api_base = config::normalize_api_base(&api_base);
 
-    let sync_repo = config::sync_repo_root(&dojo_home)?;
-    assert!(sync_repo.is_dir(), "sync repo must be a directory");
+    let jj_repo_folder = config::default_workspace_jj_repo_folder(&dojo_home)?;
+    assert!(jj_repo_folder.is_dir(), "local repo must be a directory");
 
     let anchor_workspace = config::default_workspace_root(&dojo_home);
-    let _sync_host = workspace_lifecycle::ensure_sync_host_workspace(&dojo_home, &anchor_workspace)?;
+    let _default_workspace_root = workspace_lifecycle::ensure_default_workspace_loadable(&dojo_home, &anchor_workspace)?;
 
-    workspace_lifecycle::ensure_sync_host_non_colocated_git(&sync_repo)
-        .context("non-colocated git store on sync host")?;
+    workspace_lifecycle::ensure_local_repo_non_colocated_git(&jj_repo_folder)
+        .context("non-colocated git store in local repo")?;
 
     let git_url = git_remote_url.as_ref().context(
         "missing git_remote_url in dojo config; re-run dojjo join or dojjo create with a current sync-server",
     )?;
     assert!(!git_url.is_empty(), "git_remote_url must not be empty when present");
-    let git_dir = crate::git_sync::resolve_jj_backed_git_dir(&sync_repo)?;
+    let git_dir = crate::git_sync::resolve_jj_backed_git_dir(&jj_repo_folder)?;
 
     let mut state = config::load_state(&dojo_home)?;
 
@@ -64,7 +64,7 @@ pub async fn run_for_dojo_home(client: &Client, dojo_home: &Path) -> anyhow::Res
     let workspace_op_id = jj_exec::workspace_current_operation_id_hex(&anchor_workspace)?;
 
     let man0 = fetch_manifest(client, &api_base, &dojo_id).await?;
-    let local_at_start = sha256_index(&sync_repo)?;
+    let local_at_start = sha256_index(&jj_repo_folder)?;
     assert!(
         local_at_start.len() < 500_000,
         "local file count must be bounded"
@@ -82,7 +82,7 @@ pub async fn run_for_dojo_home(client: &Client, dojo_home: &Path) -> anyhow::Res
     } else {
         None
     };
-    let local_op_heads = sync_debug::list_op_head_ids(&sync_repo);
+    let local_op_heads = sync_debug::list_op_head_ids(&jj_repo_folder);
     let server_op_heads: Vec<String> = man0
         .entries
         .keys()
@@ -117,7 +117,7 @@ pub async fn run_for_dojo_home(client: &Client, dojo_home: &Path) -> anyhow::Res
         .await
         .context("git push to dojjo (before JJ mirror push)")?;
 
-    let local_after_git_push = sha256_index(&sync_repo)?;
+    let local_after_git_push = sha256_index(&jj_repo_folder)?;
     assert!(
         local_after_git_push.len() < 500_000,
         "local file count must be bounded"
@@ -140,7 +140,7 @@ pub async fn run_for_dojo_home(client: &Client, dojo_home: &Path) -> anyhow::Res
         pull_paths: None,
         pull_candidates: None,
         pulled_records: None,
-        local_op_heads: Some(&sync_debug::list_op_head_ids(&sync_repo)),
+        local_op_heads: Some(&sync_debug::list_op_head_ids(&jj_repo_folder)),
         server_op_heads: None,
         local_index_prefix_count: None,
     });
@@ -158,21 +158,21 @@ pub async fn run_for_dojo_home(client: &Client, dojo_home: &Path) -> anyhow::Res
     if !push_paths.is_empty() {
         let push_needed: HashSet<String> = push_paths.iter().cloned().collect();
         let expanded =
-            expand_operation_parent_closure(&sync_repo, &push_paths).with_context(|| {
+            expand_operation_parent_closure(&jj_repo_folder, &push_paths).with_context(|| {
                 format!(
                     "expand operation parent closure under {}",
-                    sync_repo.display()
+                    jj_repo_folder.display()
                 )
             })?;
-        let order = compute_mirror_apply_order(&sync_repo, &expanded)
-            .with_context(|| format!("compute push apply order under {}", sync_repo.display()))?;
+        let order = compute_mirror_apply_order(&jj_repo_folder, &expanded)
+            .with_context(|| format!("compute push apply order under {}", jj_repo_folder.display()))?;
         let upload_count = order.iter().filter(|p| push_needed.contains(*p)).count();
         println!("pushing {upload_count} changed file(s)…");
         for rel in &order {
             if !push_needed.contains(rel) {
                 continue;
             }
-            let bytes = std::fs::read(sync_repo.join(rel))
+            let bytes = std::fs::read(jj_repo_folder.join(rel))
                 .with_context(|| format!("read {}", rel))?;
             tus_upload_bytes(client, &api_base, &dojo_id, rel, &bytes)
                 .await
@@ -211,7 +211,7 @@ pub async fn run_for_dojo_home(client: &Client, dojo_home: &Path) -> anyhow::Res
         pull_paths: None,
         pull_candidates: None,
         pulled_records: None,
-        local_op_heads: Some(&sync_debug::list_op_head_ids(&sync_repo)),
+        local_op_heads: Some(&sync_debug::list_op_head_ids(&jj_repo_folder)),
         server_op_heads: Some(&server_op_heads_published),
         local_index_prefix_count: None,
     });
@@ -220,7 +220,7 @@ pub async fn run_for_dojo_home(client: &Client, dojo_home: &Path) -> anyhow::Res
         .await
         .context("git fetch from dojjo (before JJ mirror pull)")?;
 
-    let local_after_git_fetch = sha256_index(&sync_repo)?;
+    let local_after_git_fetch = sha256_index(&jj_repo_folder)?;
     assert!(
         local_after_git_fetch.len() < 500_000,
         "local file count must be bounded"
@@ -244,12 +244,12 @@ pub async fn run_for_dojo_home(client: &Client, dojo_home: &Path) -> anyhow::Res
         pull_paths: None,
         pull_candidates: None,
         pulled_records: None,
-        local_op_heads: Some(&sync_debug::list_op_head_ids(&sync_repo)),
+        local_op_heads: Some(&sync_debug::list_op_head_ids(&jj_repo_folder)),
         server_op_heads: None,
         local_index_prefix_count: None,
     });
 
-    let local_op_heads_now = sync_debug::list_op_head_ids(&sync_repo);
+    let local_op_heads_now = sync_debug::list_op_head_ids(&jj_repo_folder);
     let mut pull_candidates: Vec<PullCandidate<'_>> = Vec::new();
     let mut pull_set: HashSet<String> = HashSet::new();
     for p in &man_published.apply_order {
@@ -343,7 +343,7 @@ pub async fn run_for_dojo_home(client: &Client, dojo_home: &Path) -> anyhow::Res
                 .get(&rel)
                 .expect("entry after successful GET");
 
-            let dest = sync_repo.join(&rel);
+            let dest = jj_repo_folder.join(&rel);
             if let Some(parent) = dest.parent() {
                 std::fs::create_dir_all(parent)
                     .with_context(|| format!("create_dir_all {}", parent.display()))?;
@@ -381,16 +381,16 @@ pub async fn run_for_dojo_home(client: &Client, dojo_home: &Path) -> anyhow::Res
         } else {
             Some(&pulled_records)
         },
-        local_op_heads: Some(&sync_debug::list_op_head_ids(&sync_repo)),
+        local_op_heads: Some(&sync_debug::list_op_head_ids(&jj_repo_folder)),
         server_op_heads: None,
         local_index_prefix_count: None,
     });
 
-    let prune_count = prune_local_mirror_paths_not_in_manifest(&sync_repo, &man_published)?;
+    let prune_count = prune_local_mirror_paths_not_in_manifest(&jj_repo_folder, &man_published)?;
     if prune_count > 0 {
         println!("pruned {prune_count} local file(s) not on server manifest");
     }
-    verify_local_matches_manifest(&sha256_index(&sync_repo)?, &man_published)?;
+    verify_local_matches_manifest(&sha256_index(&jj_repo_folder)?, &man_published)?;
 
     state.last_remote_revision = man_published.revision.clone();
     config::save_state(&dojo_home, &state).context("save state")?;
@@ -436,12 +436,12 @@ fn verify_local_matches_manifest(
 }
 
 fn prune_local_mirror_paths_not_in_manifest(
-    sync_repo: &Path,
+    jj_repo_folder: &Path,
     manifest: &Manifest,
 ) -> anyhow::Result<usize> {
-    assert!(sync_repo.as_os_str().len() > 0, "sync_repo must not be empty");
+    assert!(jj_repo_folder.as_os_str().len() > 0, "jj_repo_folder must not be empty");
     assert!(!manifest.revision.is_empty(), "revision must not be empty");
-    let local_index = sha256_index(sync_repo)?;
+    let local_index = sha256_index(jj_repo_folder)?;
     let mut pruned = 0usize;
     for p in local_index.keys() {
         if jj_repo_rel_excluded_from_mirror(p) {
@@ -453,8 +453,8 @@ fn prune_local_mirror_paths_not_in_manifest(
         if manifest.entries.contains_key(p) {
             continue;
         }
-        let abs = sync_repo.join(p);
-        assert!(abs.starts_with(sync_repo), "path must stay under sync_repo");
+        let abs = jj_repo_folder.join(p);
+        assert!(abs.starts_with(jj_repo_folder), "path must stay under jj_repo_folder");
         assert!(abs.is_file(), "prune target must be a regular file: {p}");
         std::fs::remove_file(&abs)
             .with_context(|| format!("prune local {p} not on server manifest"))?;

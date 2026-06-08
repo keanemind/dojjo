@@ -5,7 +5,7 @@
 //! another machine's filesystem paths locally. `store/git_target` is host-local too: each
 //! machine points at its own Git store (`git` → `store/git/` on clients). `config-id` is
 //! JJ secure-config identity (random id → `~/.config/jj/repos/<id>/`); each dojjo peer's
-//! sync host is a distinct repo path, so peers legitimately have different ids.
+//! Each dojjo peer's local repo is a distinct jj_repo_folder path, so peers legitimately have different ids.
 //!
 //! JJ `FileLock` paths under `.jj/repo` are ephemeral process coordination files; they must
 //! never be uploaded, published in the manifest, or served. Paths are listed explicitly in

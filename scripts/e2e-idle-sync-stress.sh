@@ -79,12 +79,12 @@ OUT="$(cd "$ORIGIN" && e2e_dojjo_for_home "$DOJJO_HOME_A" create 2>&1)"
 DOJO_ID="$(echo "$OUT" | sed -n 's/.*created dojo \([^ ;]*\).*/\1/p')"
 [[ -n "$DOJO_ID" ]] || { echo "no dojo id" >&2; exit 2; }
 
-SYNC_REPO_A="$(e2e_physical_sync_repo "$DOJJO_HOME_A" "$DOJO_ID")"
+DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A="$(e2e_default_workspace_jj_repo_folder "$DOJJO_HOME_A" "$DOJO_ID")"
 rm -rf "$CLONE"
 mkdir -p "$CLONE"
 e2e_cold_join "$DOJJO_HOME_B" "$DOJO_ID" "$CLONE" "clone" "$NEUTRAL"
-SYNC_REPO_B="$(e2e_physical_sync_repo "$DOJJO_HOME_B" "$DOJO_ID")"
-e2e_assert_distinct_paths "$SYNC_REPO_A" "$SYNC_REPO_B"
+DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B="$(e2e_default_workspace_jj_repo_folder "$DOJJO_HOME_B" "$DOJO_ID")"
+e2e_assert_distinct_paths "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B"
 
 OP_ID_A_BASELINE=""
 OP_ID_B_BASELINE=""
@@ -95,14 +95,14 @@ stress_sync_peer() {
   local peer="$3"
   local home="$4"
   local ws="$5"
-  local sync_repo="$6"
+  local jj_repo_folder="$6"
 
   local op_before op_after idx_before idx_after
   op_before="$(e2e_jj_current_operation_id "$ws")"
-  idx_before="$(e2e_mirror_sha256_index "$sync_repo")"
+  idx_before="$(e2e_mirror_sha256_index "$jj_repo_folder")"
 
   local diff_json disk_json
-  diff_json="$(e2e_mirror_local_vs_server_diff "$sync_repo" "$DOJJO_API_BASE" "$DOJO_ID" | python3 -c '
+  diff_json="$(e2e_mirror_local_vs_server_diff "$jj_repo_folder" "$DOJJO_API_BASE" "$DOJO_ID" | python3 -c '
 import json, sys
 print(json.dumps([line.strip() for line in sys.stdin if line.strip()][:20]))
 ' || echo '[]')"
@@ -120,7 +120,7 @@ print(json.dumps([line.strip() for line in sys.stdin if line.strip()][:20]))
     exit 2
   fi
 
-  idx_after="$(e2e_mirror_sha256_index "$sync_repo")"
+  idx_after="$(e2e_mirror_sha256_index "$jj_repo_folder")"
   disk_json="$(e2e_mirror_index_changed_paths "$idx_before" "$idx_after" | python3 -c '
 import json, sys
 print(json.dumps([line.strip() for line in sys.stdin if line.strip()][:20]))
@@ -132,7 +132,7 @@ print(json.dumps([line.strip() for line in sys.stdin if line.strip()][:20]))
   local man_summary man_entries man_rev local_files
   man_summary="$(e2e_manifest_summary "$DOJJO_API_BASE" "$DOJO_ID")"
   read -r man_entries man_rev <<<"$man_summary"
-  local_files="$(e2e_mirror_local_file_count "$sync_repo")"
+  local_files="$(e2e_mirror_local_file_count "$jj_repo_folder")"
 
   export E2E_STRESS_RECORD_ROUND="$round"
   export E2E_STRESS_RECORD_STEP="$step"
@@ -181,8 +181,8 @@ done
 read -r BASELINE_MANIFEST_ENTRIES BASELINE_MANIFEST_REV <<<"$(e2e_manifest_summary "$DOJJO_API_BASE" "$DOJO_ID")"
 OP_ID_A_BASELINE="$(e2e_jj_current_operation_id "$ORIGIN")"
 OP_ID_B_BASELINE="$(e2e_jj_current_operation_id "$CLONE")"
-LOCAL_FILES_A="$(e2e_mirror_local_file_count "$SYNC_REPO_A")"
-LOCAL_FILES_B="$(e2e_mirror_local_file_count "$SYNC_REPO_B")"
+LOCAL_FILES_A="$(e2e_mirror_local_file_count "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A")"
+LOCAL_FILES_B="$(e2e_mirror_local_file_count "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B")"
 
 echo "baseline manifest_entries=$BASELINE_MANIFEST_ENTRIES revision=${BASELINE_MANIFEST_REV:0:16}…"
 echo "baseline op A: ${OP_ID_A_BASELINE:0:16}…  op B: ${OP_ID_B_BASELINE:0:16}…"
@@ -198,10 +198,10 @@ STEP_NO=0
 
 for round in $(seq 1 "$ROUNDS"); do
   STEP_NO=$((STEP_NO + 1))
-  stress_sync_peer "$round" "$STEP_NO" "A" "$DOJJO_HOME_A" "$ORIGIN" "$SYNC_REPO_A"
+  stress_sync_peer "$round" "$STEP_NO" "A" "$DOJJO_HOME_A" "$ORIGIN" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A"
 
   STEP_NO=$((STEP_NO + 1))
-  stress_sync_peer "$round" "$STEP_NO" "B" "$DOJJO_HOME_B" "$CLONE" "$SYNC_REPO_B"
+  stress_sync_peer "$round" "$STEP_NO" "B" "$DOJJO_HOME_B" "$CLONE" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B"
   read -r ENTRIES_AFTER_B _ <<<"$(e2e_manifest_summary "$DOJJO_API_BASE" "$DOJO_ID")"
 
   if [[ "$MANIFEST_STEADY_LOCKED" -eq 0 ]]; then

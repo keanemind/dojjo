@@ -46,12 +46,12 @@ OUT="$(cd "$ORIGIN" && e2e_dojjo_for_home "$DOJJO_HOME_A" create 2>&1)"
 DOJO_ID="$(echo "$OUT" | sed -n 's/.*created dojo \([^ ;]*\).*/\1/p')"
 [[ -n "$DOJO_ID" ]] || { echo "no dojo id" >&2; exit 1; }
 
-SYNC_REPO_A="$(e2e_physical_sync_repo "$DOJJO_HOME_A" "$DOJO_ID")"
+DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A="$(e2e_default_workspace_jj_repo_folder "$DOJJO_HOME_A" "$DOJO_ID")"
 rm -rf "$CLONE"
 mkdir -p "$CLONE"
 e2e_cold_join "$DOJJO_HOME_B" "$DOJO_ID" "$CLONE" "clone" "$NEUTRAL"
-SYNC_REPO_B="$(e2e_physical_sync_repo "$DOJJO_HOME_B" "$DOJO_ID")"
-e2e_assert_distinct_paths "$SYNC_REPO_A" "$SYNC_REPO_B"
+DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B="$(e2e_default_workspace_jj_repo_folder "$DOJJO_HOME_B" "$DOJO_ID")"
+e2e_assert_distinct_paths "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B"
 
 # Converge after create/join; no jj commits from here.
 for _ in 1 2 3; do
@@ -61,8 +61,8 @@ done
 
 echo "baseline operation id (peer A): $(e2e_jj_current_operation_id "$ORIGIN" | head -c 16)…"
 echo "baseline operation id (peer B): $(e2e_jj_current_operation_id "$CLONE" | head -c 16)…"
-echo "sync-host op_heads files (A): $(find "$SYNC_REPO_A/op_heads/heads" -type f 2>/dev/null | wc -l | tr -d ' ')"
-echo "sync-host op_heads files (B): $(find "$SYNC_REPO_B/op_heads/heads" -type f 2>/dev/null | wc -l | tr -d ' ')"
+echo "local repo op_heads files (A): $(find "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A/op_heads/heads" -type f 2>/dev/null | wc -l | tr -d ' ')"
+echo "local repo op_heads files (B): $(find "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B/op_heads/heads" -type f 2>/dev/null | wc -l | tr -d ' ')"
 
 LAST_PUSH=0
 LAST_PULL=0
@@ -75,13 +75,13 @@ run_step() {
   local label="$1"
   local home="$2"
   local ws="$3"
-  local sync_repo="$4"
+  local jj_repo_folder="$4"
 
   local op_before op_after idx_before idx_after
   op_before="$(e2e_jj_current_operation_id "$ws")"
-  idx_before="$(e2e_mirror_sha256_index "$sync_repo")"
+  idx_before="$(e2e_mirror_sha256_index "$jj_repo_folder")"
   local diff_before
-  diff_before="$(e2e_mirror_local_vs_server_diff "$sync_repo" "$DOJJO_API_BASE" "$DOJO_ID" | head -20 || true)"
+  diff_before="$(e2e_mirror_local_vs_server_diff "$jj_repo_folder" "$DOJJO_API_BASE" "$DOJO_ID" | head -20 || true)"
 
   local counts push pull
   counts="$(e2e_sync_count_push_pull "$home" "$ws")"
@@ -90,7 +90,7 @@ run_step() {
   LAST_PULL=$pull
 
   op_after="$(e2e_jj_current_operation_id "$ws")"
-  idx_after="$(e2e_mirror_sha256_index "$sync_repo")"
+  idx_after="$(e2e_mirror_sha256_index "$jj_repo_folder")"
   local changed_on_disk
   changed_on_disk="$(e2e_mirror_index_changed_paths "$idx_before" "$idx_after" | head -20 || true)"
 
@@ -119,15 +119,15 @@ run_step() {
 }
 
 # User-reported sequence: A, A, B, B, A (no jj edits).
-run_step "A sync #1" "$DOJJO_HOME_A" "$ORIGIN" "$SYNC_REPO_A"
-run_step "A sync #2" "$DOJJO_HOME_A" "$ORIGIN" "$SYNC_REPO_A"
+run_step "A sync #1" "$DOJJO_HOME_A" "$ORIGIN" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A"
+run_step "A sync #2" "$DOJJO_HOME_A" "$ORIGIN" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A"
 A2_PUSH=$LAST_PUSH
 A2_PULL=$LAST_PULL
-run_step "B sync #1" "$DOJJO_HOME_B" "$CLONE" "$SYNC_REPO_B"
-run_step "B sync #2" "$DOJJO_HOME_B" "$CLONE" "$SYNC_REPO_B"
-run_step "A sync #3 (after B)" "$DOJJO_HOME_A" "$ORIGIN" "$SYNC_REPO_A"
+run_step "B sync #1" "$DOJJO_HOME_B" "$CLONE" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B"
+run_step "B sync #2" "$DOJJO_HOME_B" "$CLONE" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B"
+run_step "A sync #3 (after B)" "$DOJJO_HOME_A" "$ORIGIN" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A"
 
-run_step "A sync #4 (immediate repeat)" "$DOJJO_HOME_A" "$ORIGIN" "$SYNC_REPO_A"
+run_step "A sync #4 (immediate repeat)" "$DOJJO_HOME_A" "$ORIGIN" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A"
 A4_PUSH=$LAST_PUSH
 A4_PULL=$LAST_PULL
 

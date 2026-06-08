@@ -1,4 +1,4 @@
-//! `dojjo` — create a dojo, join with a new JJ workspace, and sync the hidden `_default` repo host.
+//! `dojjo` — create a dojo, join with a new JJ workspace, and sync the local repo under `_default`.
 
 use std::path::PathBuf;
 
@@ -53,7 +53,7 @@ enum Commands {
     ///
     /// Other workspaces on this DOJJO_HOME get updated `.jj/repo` pointers. Server dojo unchanged.
     Undojjo,
-    /// Join a dojo: add a workspace at `--into` backed by this machine's sync host.
+    /// Join a dojo: add a workspace at `--into` backed by this machine's local repo.
     ///
     /// First join on this machine pulls the server mirror into `~/.dojjo/dojos/{id}/_default`.
     /// When the dojo is already set up locally, join only runs `jj workspace add` (warm join).
@@ -88,7 +88,7 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum DevCmd {
-    /// Push/pull the dojo sync repo (run from any linked workspace for this dojo).
+    /// Push/pull the local repo (run from any linked workspace for this dojo).
     Sync,
     /// Create dojo, upload a tiny blob, verify manifest + GETs + ETag (no local jj repo).
     Smoke,

@@ -181,16 +181,16 @@ init_non_colocated_pair() {
     exit 1
   fi
 
-  SYNC_REPO_A="$(e2e_physical_sync_repo "$DOJJO_HOME_A" "$DOJO_ID")"
-  echo "peer A sync repo: $SYNC_REPO_A"
+  DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A="$(e2e_default_workspace_jj_repo_folder "$DOJJO_HOME_A" "$DOJO_ID")"
+  echo "peer A local repo: $DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A"
 
   rm -rf "$CLONE"
   mkdir -p "$CLONE"
   e2e_cold_join "$DOJJO_HOME_B" "$DOJO_ID" "$CLONE" "$peer_b_name" "$NEUTRAL"
 
-  SYNC_REPO_B="$(e2e_physical_sync_repo "$DOJJO_HOME_B" "$DOJO_ID")"
-  echo "peer B sync repo: $SYNC_REPO_B"
-  e2e_assert_distinct_paths "$SYNC_REPO_A" "$SYNC_REPO_B"
+  DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B="$(e2e_default_workspace_jj_repo_folder "$DOJJO_HOME_B" "$DOJO_ID")"
+  echo "peer B local repo: $DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B"
+  e2e_assert_distinct_paths "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B"
 
   (cd "$CLONE" && "$JJ" workspace update-stale >/dev/null 2>&1) || true
 }
@@ -211,7 +211,7 @@ chaos_background_object_rsync() {
 chaos_partial_server_mirror_overlay() {
   local dojo_id="$1"
   local clone_repo="$2"
-  # clone_repo must be a physical directory (peer B sync host), not a .jj/repo pointer file.
+  # clone_repo must be a physical directory (peer B local repo jj_repo_folder), not a .jj/repo pointer file.
   if [[ -f "$clone_repo" ]]; then
     echo "chaos_partial_server_mirror_overlay: expected directory, got pointer file $clone_repo" >&2
     return 1
@@ -328,7 +328,7 @@ scenario_concurrent_objects_during_sync() {
   for round in $(seq 1 12); do
     (cd "$ORIGIN" && e2e_dojjo_for_home "$DOJJO_HOME_A" dev sync >/dev/null 2>&1) || true
     if [[ "$SYNC_MODE" == "naive" ]]; then
-      chaos_partial_server_mirror_overlay "$DOJO_ID" "$SYNC_REPO_B"
+      chaos_partial_server_mirror_overlay "$DOJO_ID" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B"
     fi
     (cd "$CLONE" && e2e_dojjo_for_home "$DOJJO_HOME_B" dev sync >/dev/null 2>&1) || true
     sleep 0.1

@@ -39,7 +39,7 @@ pub fn resolve_jj_backed_git_dir(repo_root: &Path) -> anyhow::Result<PathBuf> {
     );
     anyhow::ensure!(
         trimmed == "git",
-        "dojo sync hosts use internal git store (git_target must be \"git\", got {trimmed:?} at {})",
+        "dojo local repos use internal git store (git_target must be \"git\", got {trimmed:?} at {})",
         target_file.display()
     );
 

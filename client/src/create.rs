@@ -103,9 +103,9 @@ fn infer_create_progress(
     let ws_str = user_workspace
         .to_str()
         .context("workspace path must be UTF-8")?;
-    let phase = if config::sync_repo_root(dojo_home).is_err() {
+    let phase = if config::default_workspace_jj_repo_folder(dojo_home).is_err() {
         CreatePhase::ServerRegistered
-    } else if config::workspace_rehomed_to_dojo(&user_jj, dojo_home)? {
+    } else if config::user_workspace_jj_repo_file_points_at_local_repo(&user_jj, dojo_home)? {
         CreatePhase::Rehomed
     } else {
         CreatePhase::ServerRegistered
@@ -141,24 +141,24 @@ async fn resume_create(
         "git_remote_url must not be empty"
     );
 
-    let sync_repo = if progress.phase < CreatePhase::Rehomed {
-        let sync_repo = workspace_lifecycle::ensure_dojo_after_create(
+    let jj_repo_folder = if progress.phase < CreatePhase::Rehomed {
+        let jj_repo_folder = workspace_lifecycle::ensure_dojo_after_create(
             user_workspace,
             dojo_home,
             &progress.user_workspace_name,
         )?;
         progress.phase = CreatePhase::Rehomed;
         config::save_create_progress(dojo_home, &progress).context("save create progress")?;
-        sync_repo
+        jj_repo_folder
     } else {
-        config::sync_repo_root(dojo_home)?
+        config::default_workspace_jj_repo_folder(dojo_home)?
     };
     assert!(
-        sync_repo == config::sync_repo_root(dojo_home)?,
-        "sync repo path must match dojo home _default host"
+        jj_repo_folder == config::default_workspace_jj_repo_folder(dojo_home)?,
+        "local repo path must match dojo home _default host"
     );
 
-    let git_dir = crate::git_sync::resolve_jj_backed_git_dir(&sync_repo)?;
+    let git_dir = crate::git_sync::resolve_jj_backed_git_dir(&jj_repo_folder)?;
 
     if progress.phase < CreatePhase::GitPushed {
         crate::git_sync::git_push_dojjo(&git_dir, &git_remote_url)
@@ -168,11 +168,11 @@ async fn resume_create(
         config::save_create_progress(dojo_home, &progress).context("save create progress")?;
     }
 
-    let paths = scan_repo_files(&sync_repo)?;
-    let apply_order = compute_mirror_apply_order(&sync_repo, &paths).with_context(|| {
+    let paths = scan_repo_files(&jj_repo_folder)?;
+    let apply_order = compute_mirror_apply_order(&jj_repo_folder, &paths).with_context(|| {
         format!(
             "compute apply order under {} (check repo integrity)",
-            sync_repo.display()
+            jj_repo_folder.display()
         )
     })?;
     assert_eq!(
@@ -184,7 +184,7 @@ async fn resume_create(
     let man_before = fetch_manifest(client, &api_base, dojo_id).await?;
     let mut upload_count = 0usize;
     for rel in &apply_order {
-        let abs = sync_repo.join(rel);
+        let abs = jj_repo_folder.join(rel);
         let bytes = std::fs::read(&abs).with_context(|| format!("read {}", abs.display()))?;
         let sha = hex::encode(Sha256::digest(&bytes));
         if man_before
@@ -221,7 +221,7 @@ async fn resume_create(
         "manifest revision must not be empty"
     );
     for rel in &apply_order {
-        let bytes = std::fs::read(sync_repo.join(rel))
+        let bytes = std::fs::read(jj_repo_folder.join(rel))
             .with_context(|| format!("re-read {}", rel))?;
         let ent = man
             .entries
@@ -247,7 +247,7 @@ async fn resume_create(
     background_sync::ensure_worker_running(dojo_home).context("start background sync worker")?;
 
     println!("created dojo {dojo_id}; config {}", config::dojo_config_path(dojo_home).display());
-    println!("sync repo {}", sync_repo.display());
+    println!("local repo {}", jj_repo_folder.display());
     println!("user workspace name {}", progress.user_workspace_name);
     println!("manifest revision {}", man.revision);
     println!("{}", background_sync::join_or_create_status_message(dojo_home)?);

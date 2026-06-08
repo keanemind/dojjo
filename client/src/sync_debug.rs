@@ -86,8 +86,8 @@ pub fn emit(record: &SyncDebugRecord<'_>) {
     writeln!(stderr, "{line}").expect("write sync debug to stderr");
 }
 
-pub fn list_op_head_ids(sync_repo: &std::path::Path) -> Vec<String> {
-    let heads_dir = sync_repo.join("op_heads").join("heads");
+pub fn list_op_head_ids(jj_repo_folder: &std::path::Path) -> Vec<String> {
+    let heads_dir = jj_repo_folder.join("op_heads").join("heads");
     let mut out = Vec::new();
     let Ok(rd) = std::fs::read_dir(&heads_dir) else {
         return out;

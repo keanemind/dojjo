@@ -29,14 +29,14 @@ The server is a **bridge**, not a live filesystem. Your machines stay isolated u
   ~/project-a/                      dojo "abc"                     ~/project-b/
     (your workspace)                  ├─ mirror: shared .jj/repo     (your workspace)
                                     └─ bare git: object transport      (checkout via join)
-  hidden sync host
+  local repo
   ~/.dojjo/.../abc/_default/
     physical .jj/repo  ──push/pull──►  canonical copy  ◄──push/pull──  physical .jj/repo
 ```
 
 **What this means:**
 
-1. **Each device is its own client** — separate config home (`DOJJO_HOME`), separate project directory, separate physical `.jj/repo` on disk.
+1. **Each device is its own client** — separate config home (`DOJJO_HOME`), separate project directory, separate **local repo** (physical `.jj/repo`) on disk.
 2. **Machines do not share storage** — you only see each other's changes after `dojjo` push/pull through the server.
 3. **After sync, history matches** — same JJ operations, same workspace names in the shared view, same commit graph — while **your working-copy files and paths** stay local on each machine.
 
@@ -89,8 +89,8 @@ After pull, you may need normal JJ commands (e.g. `jj workspace update-stale`) s
 **What happens**
 
 1. Allocate a new dojo on the server (id, API base, bare Git remote URL).
-2. Establish a **hidden sync host** for this dojo on your machine (the canonical physical `.jj/repo` for that dojo).
-3. Re-home your repo so the physical store lives at the sync host; your project dir keeps a **pointer** into that store (same JJ multi-workspace pattern as on one machine).
+2. Establish the **local repo** for this dojo on your machine (physical `.jj/repo` under `_default` in dojo home).
+3. Re-home your repo so the physical store lives in the local repo; your project dir keeps a **pointer** into that store (same JJ multi-workspace pattern as on one machine).
 4. Reserve the shared workspace name `default` on the server side: frozen, sparse-empty, `@` on `root()` — a sentinel in the shared view, not where humans edit.
 5. Give you a **non-`default` workspace name** in the shared view (e.g. hostname).
 6. Publish initial shared state to the server (JJ mirror + Git push).
@@ -129,15 +129,15 @@ After pull, you may need normal JJ commands (e.g. `jj workspace update-stale`) s
 **Cold join** (first time this dojo is set up on this machine):
 
 1. Fetch dojo metadata from the server (id, Git remote URL, etc.).
-2. Create the hidden sync host layout under this machine's `DOJJO_HOME` for that dojo.
-3. Download shared repo state from the server into this machine's sync host.
+2. Create the local repo layout under this machine's `DOJJO_HOME` for that dojo.
+3. Download shared repo state from the server into this machine's local repo.
 4. Fetch Git objects from the dojo bare remote so Git-backed repos are usable locally.
-5. Create a new JJ workspace at `--into` backed by this machine's replica (new workspace name in the shared view, unique across the dojo).
-6. Link `--into/.jj/dojjo.json` so sync commands resolve the right server and sync host.
+5. Create a new JJ workspace at `--into` backed by the local repo (new workspace name in the shared view, unique across the dojo).
+6. Link `--into/.jj/dojjo.json` so sync commands resolve the right server and local repo.
 
 **Warm join** (dojo already set up on this machine):
 
-Dojjo runs `jj workspace add` against the existing local sync host. The practical benefit over running `jj workspace add` yourself is that you only need the **dojo id** and an empty `--into` (from a neutral directory). You do not need to `cd` into an existing linked checkout or know where `_default` lives under `DOJJO_HOME`.
+Dojjo runs `jj workspace add` against the existing local repo. The practical benefit over running `jj workspace add` yourself is that you only need the **dojo id** and an empty `--into` (from a neutral directory). You do not need to `cd` into an existing linked checkout or know where `_default` lives under `DOJJO_HOME`.
 
 If you are already in a linked workspace, plain `jj workspace add` is equivalent for repo behavior.
 
@@ -145,7 +145,7 @@ If you are already in a linked workspace, plain `jj workspace add` is equivalent
 
 - Not `jj clone` from another directory on the same machine.
 - Not "run from the creator's project tree so `jj -R` shares their repo."
-- Not a substitute for `dojjo dev sync` when you need this machine's replica to catch up with the server (all workspaces share the same sync repo until sync runs).
+- Not a substitute for `dojjo dev sync` when you need this machine's local dojo replica to catch up with the server (all workspaces share the same local repo until sync runs).
 
 **Workspace naming**
 
@@ -156,19 +156,19 @@ If you are already in a linked workspace, plain `jj workspace add` is equivalent
 
 ## What happens on each sync
 
-After `create` or `join`, Dojjo keeps **this machine's** dojo replica in sync with the server in the background. Each sync round makes your local replica match the server and publishes your new repo changes to it.
+After `create` or `join`, Dojjo keeps **this machine's local dojo replica** in sync with the server in the background. Each sync round makes your local repo match the server and publishes your new repo changes to it.
 
 Background sync is enabled by default on first `create`/`join` for a dojo on a machine. Each background sync round is equivalent to running `dojjo dev sync` manually. You usually do not need to run that command yourself; use it to debug sync problems or force a sync when you want one immediately. Disable background sync for troubleshooting with `dojjo background-sync disable`.
 
 **Scope**
 
 - Sync runs from a workspace **linked** to the dojo (`dojjo.json` or equivalent).
-- Sync always read/writes the **sync host** copy for that dojo on **this** machine, not someone else's disk.
+- Sync always read/writes the **local repo** for that dojo on **this** machine, not someone else's disk.
 
 **Each round**
 
 1. **Git leg (if applicable):** push local Git-backed objects to the dojo bare remote; fetch missing objects from the server before applying JJ mirror updates.
-2. **JJ leg:** compare this machine's sync-host repo files to the server manifest; upload changed mirrored files; download files the server has that differ locally; apply in dependency-safe order.
+2. **JJ leg:** compare this machine's local repo files to the server manifest; upload changed mirrored files; download files the server has that differ locally; apply in dependency-safe order.
 3. Leave machine-local paths (`workspace_store`, git transport scratch, working copies) out of the contract — local copies may exist without being on the server.
 4. After sync, your workspace should be able to see merged history (possibly after JJ's own `update-stale` / reconcile steps).
 
@@ -176,7 +176,7 @@ Background sync is enabled by default on first `create`/`join` for a dojo on a m
 
 - Not editing files in the server's frozen `default` workspace on disk.
 - Not rsync of the whole project directory (only repo state crosses the bridge; working tree files are edited locally).
-- Not a substitute for join on a machine that has never pulled a dojo replica.
+- Not a substitute for join on a machine that has never pulled a local dojo replica.
 
 ---
 
@@ -185,10 +185,10 @@ Background sync is enabled by default on first `create`/`join` for a dojo on a m
 1. **One dojo, many devices, many workspace names** — each join adds one name in the shared view; each device keeps its own checkout path.
 2. **`default` is server convention only** — use other names for yourself; `default` stays frozen in the shared view.
 3. **Join is cold-start for `--into`** — empty directory, no pre-existing JJ repo there.
-4. **Sync is per-machine replica ↔ server** — never assume another peer's filesystem is visible.
+4. **Sync is local dojo replica ↔ server** — never assume another peer's filesystem is visible.
 5. **JJ reconciles, Dojjo transports** — conflicts and op-head merging are JJ's job after faithful replication.
 6. **Workspace paths are local** — syncing them would leak host filesystem layout and break other machines.
 
 ---
 
-In one sentence: **each machine keeps its own JJ repo replica and workspace checkout; the dojo server is the only wire between them.**
+In one sentence: **each machine keeps its own local dojo replica and workspace checkout; the dojo server is the only wire between them.**

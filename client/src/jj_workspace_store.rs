@@ -114,19 +114,19 @@ fn write_store_atomic(store_file: &Path, workspaces: &Workspaces) -> anyhow::Res
     Ok(())
 }
 
-/// Record `workspace_root` for `workspace_name` in jj's workspace store at `sync_repo`.
+/// Record `workspace_root` for `workspace_name` in jj's workspace store at `jj_repo_folder`.
 pub fn register_workspace_path(
-    sync_repo: &Path,
+    jj_repo_folder: &Path,
     workspace_name: &str,
     workspace_root: &Path,
 ) -> anyhow::Result<()> {
     anyhow::ensure!(!workspace_name.is_empty(), "workspace_name must not be empty");
-    assert!(sync_repo.is_dir(), "sync_repo must be a directory");
+    assert!(jj_repo_folder.is_dir(), "jj_repo_folder must be a directory");
     assert!(workspace_root.is_dir(), "workspace_root must be a directory");
 
-    let store_dir = sync_repo.join("workspace_store");
+    let store_dir = jj_repo_folder.join("workspace_store");
     let store_file = store_dir.join("index");
-    let rel = repo_relative_path(sync_repo, workspace_root)?;
+    let rel = repo_relative_path(jj_repo_folder, workspace_root)?;
     let path_bytes = path_to_store_bytes(&rel)?;
 
     let _lock = StoreLock::acquire(&store_dir)?;
@@ -152,13 +152,13 @@ mod tests {
     fn register_workspace_path_roundtrip() {
         let dir = tempdir().unwrap();
         let default_ws = dir.path().join("_default");
-        let sync_jj = default_ws.join(".jj");
-        let sync_repo = sync_jj.join("repo");
-        fs::create_dir_all(sync_repo.join("store")).unwrap();
+        let default_workspace_jj_dir = default_ws.join(".jj");
+        let jj_repo_folder = default_workspace_jj_dir.join("repo");
+        fs::create_dir_all(jj_repo_folder.join("store")).unwrap();
 
-        register_workspace_path(&sync_repo, "default", &default_ws).unwrap();
+        register_workspace_path(&jj_repo_folder, "default", &default_ws).unwrap();
 
-        let got = read_store(&sync_repo.join("workspace_store").join("index")).unwrap();
+        let got = read_store(&jj_repo_folder.join("workspace_store").join("index")).unwrap();
         assert_eq!(got.workspaces.len(), 1);
         assert_eq!(got.workspaces[0].name, "default");
         assert_eq!(got.workspaces[0].path, b"../..");
@@ -168,13 +168,13 @@ mod tests {
     fn register_workspace_path_replaces_existing_name() {
         let dir = tempdir().unwrap();
         let default_ws = dir.path().join("_default");
-        let sync_repo = default_ws.join(".jj").join("repo");
-        fs::create_dir_all(sync_repo.join("store")).unwrap();
+        let jj_repo_folder = default_ws.join(".jj").join("repo");
+        fs::create_dir_all(jj_repo_folder.join("store")).unwrap();
 
-        register_workspace_path(&sync_repo, "default", &default_ws).unwrap();
-        register_workspace_path(&sync_repo, "default", &default_ws).unwrap();
+        register_workspace_path(&jj_repo_folder, "default", &default_ws).unwrap();
+        register_workspace_path(&jj_repo_folder, "default", &default_ws).unwrap();
 
-        let got = read_store(&sync_repo.join("workspace_store").join("index")).unwrap();
+        let got = read_store(&jj_repo_folder.join("workspace_store").join("index")).unwrap();
         assert_eq!(got.workspaces.len(), 1);
     }
 }

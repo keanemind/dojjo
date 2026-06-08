@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Debug: after cold join pull, inspect sync_repo/store/git before git fetch.
+# Debug: after cold join pull, inspect jj_repo_folder/store/git before git fetch.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -46,7 +46,7 @@ OUT="$(cd "$ORIGIN" && e2e_dojjo_for_home "$DOJJO_HOME_A" create 2>&1)"
 DOJO_ID="$(echo "$OUT" | sed -n 's/.*created dojo \([^ ;]*\).*/\1/p')"
 [[ -n "$DOJO_ID" ]] || { echo "no dojo id" >&2; exit 1; }
 
-SYNC_REPO_B="$(e2e_physical_sync_repo "$DOJJO_HOME_B" "$DOJO_ID" || true)"
+DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B="$(e2e_default_workspace_jj_repo_folder "$DOJJO_HOME_B" "$DOJO_ID" || true)"
 rm -rf "$CLONE"
 mkdir -p "$CLONE"
 
@@ -58,20 +58,20 @@ set -e
 echo "$JOIN_OUT"
 echo "join exit=$JOIN_CODE"
 
-SYNC_REPO_B="$(e2e_physical_sync_repo "$DOJJO_HOME_B" "$DOJO_ID" || true)"
-echo "sync_repo_b=${SYNC_REPO_B:-<missing>}"
-if [[ -n "${SYNC_REPO_B:-}" ]]; then
+DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B="$(e2e_default_workspace_jj_repo_folder "$DOJJO_HOME_B" "$DOJO_ID" || true)"
+echo "jj_repo_folder_b=${DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B:-<missing>}"
+if [[ -n "${DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B:-}" ]]; then
   echo "=== store/git_target ==="
-  if [[ -f "${SYNC_REPO_B}/store/git_target" ]]; then
-    cat "${SYNC_REPO_B}/store/git_target" || true
+  if [[ -f "${DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B}/store/git_target" ]]; then
+    cat "${DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B}/store/git_target" || true
   else
     echo "(missing)"
   fi
   echo "=== store/git listing ==="
-  ls -la "${SYNC_REPO_B}/store/git" 2>&1 | sed 's/^/  /' || true
+  ls -la "${DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B}/store/git" 2>&1 | sed 's/^/  /' || true
   echo "=== store/git important files ==="
   for f in HEAD config packed-refs; do
-    if [[ -f "${SYNC_REPO_B}/store/git/${f}" ]]; then
+    if [[ -f "${DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B}/store/git/${f}" ]]; then
       echo "  ${f}: present"
     else
       echo "  ${f}: MISSING"
@@ -79,7 +79,7 @@ if [[ -n "${SYNC_REPO_B:-}" ]]; then
   done
   echo "=== store/git dirs ==="
   for d in objects refs; do
-    if [[ -d "${SYNC_REPO_B}/store/git/${d}" ]]; then
+    if [[ -d "${DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B}/store/git/${d}" ]]; then
       echo "  ${d}/: present"
     else
       echo "  ${d}/: MISSING"

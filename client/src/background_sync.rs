@@ -73,14 +73,14 @@ struct OperationsWatcher {
     rx: UnboundedReceiver<notify::Result<Event>>,
 }
 
-fn operations_dir(sync_repo: &Path) -> PathBuf {
-    assert!(sync_repo.as_os_str().len() > 0, "sync_repo must not be empty");
-    sync_repo.join("op_store").join("operations")
+fn operations_dir(jj_repo_folder: &Path) -> PathBuf {
+    assert!(jj_repo_folder.as_os_str().len() > 0, "jj_repo_folder must not be empty");
+    jj_repo_folder.join("op_store").join("operations")
 }
 
-fn create_operations_watcher(sync_repo: &Path) -> anyhow::Result<Option<OperationsWatcher>> {
-    assert!(sync_repo.is_dir(), "sync_repo must be a directory");
-    let dir = operations_dir(sync_repo);
+fn create_operations_watcher(jj_repo_folder: &Path) -> anyhow::Result<Option<OperationsWatcher>> {
+    assert!(jj_repo_folder.is_dir(), "jj_repo_folder must be a directory");
+    let dir = operations_dir(jj_repo_folder);
     if !dir.is_dir() {
         return Ok(None);
     }
@@ -197,9 +197,9 @@ pub async fn run_worker(dojo_home: &Path) -> anyhow::Result<()> {
     write_pid(&dojo_home, self_pid)?;
 
     let client = Client::new();
-    let sync_repo = config::sync_repo_root(&dojo_home)?;
-    assert!(sync_repo.is_dir(), "sync_repo must be a directory");
-    let mut watcher = match create_operations_watcher(&sync_repo) {
+    let jj_repo_folder = config::default_workspace_jj_repo_folder(&dojo_home)?;
+    assert!(jj_repo_folder.is_dir(), "jj_repo_folder must be a directory");
+    let mut watcher = match create_operations_watcher(&jj_repo_folder) {
         Ok(w) => w,
         Err(e) => {
             eprintln!("dojjo background sync: failed to watch operations dir: {e:#}");

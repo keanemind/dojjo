@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # MVP smoke: sync-server + dojjo create / cold join / dev sync with two simulated clients
-# (DOJJO_HOME_A / DOJJO_HOME_B). Distinct physical sync-host repos; convergence via server only.
+# (DOJJO_HOME_A / DOJJO_HOME_B). Distinct physical local-repo repos; convergence via server only.
 # See README.md and docs/DEVELOPMENT.md.
 set -euo pipefail
 
@@ -61,9 +61,9 @@ if [[ -z "$DOJO_ID" ]]; then
   exit 1
 fi
 
-SYNC_REPO_A="$(e2e_physical_sync_repo "$DOJJO_HOME_A" "$DOJO_ID")"
-if [[ ! -d "$SYNC_REPO_A/store" ]]; then
-  echo "expected physical sync repo at $SYNC_REPO_A" >&2
+DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A="$(e2e_default_workspace_jj_repo_folder "$DOJJO_HOME_A" "$DOJO_ID")"
+if [[ ! -d "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A/store" ]]; then
+  echo "expected physical local repo at $DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A" >&2
   exit 1
 fi
 if [[ ! -f "${ORIGIN}/.jj/repo" ]]; then
@@ -75,8 +75,8 @@ rm -rf "$CLONE"
 mkdir -p "$CLONE"
 e2e_cold_join "$DOJJO_HOME_B" "$DOJO_ID" "$CLONE" "clone" "$NEUTRAL"
 
-SYNC_REPO_B="$(e2e_physical_sync_repo "$DOJJO_HOME_B" "$DOJO_ID")"
-e2e_assert_distinct_paths "$SYNC_REPO_A" "$SYNC_REPO_B"
+DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B="$(e2e_default_workspace_jj_repo_folder "$DOJJO_HOME_B" "$DOJO_ID")"
+e2e_assert_distinct_paths "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B"
 
 echo "--- jj workspace list (origin) ---"
 (cd "$ORIGIN" && "$JJ" workspace list)
@@ -109,7 +109,7 @@ if ! (cd "$CLONE" && "$JJ" show -r "$ORIGIN_EDIT_ID" >/dev/null 2>&1); then
   exit 1
 fi
 
-e2e_assert_peers_converged "$ORIGIN" "$CLONE" "" "$SYNC_REPO_A" "$SYNC_REPO_B"
+e2e_assert_peers_converged "$ORIGIN" "$CLONE" "" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B"
 
 echo "--- jj log after sync (origin) ---"
 (cd "$ORIGIN" && "$JJ" log -n 5)

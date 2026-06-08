@@ -50,8 +50,8 @@ PY
 }
 
 count_extra_heads() {
-  local sync_repo="$1"
-  python3 - "$sync_repo" <<'PY'
+  local jj_repo_folder="$1"
+  python3 - "$jj_repo_folder" <<'PY'
 import json, pathlib, sys
 repo = pathlib.Path(sys.argv[1]) / "store" / "extra" / "heads"
 if not repo.is_dir():
@@ -70,8 +70,8 @@ PY
 }
 
 snapshot_op_heads() {
-  local sync_repo="$1"
-  python3 - "$sync_repo" <<'PY'
+  local jj_repo_folder="$1"
+  python3 - "$jj_repo_folder" <<'PY'
 import json, pathlib, sys
 repo = pathlib.Path(sys.argv[1]) / "op_heads" / "heads"
 ids = sorted(p.name for p in repo.iterdir() if p.is_file()) if repo.is_dir() else []
@@ -80,8 +80,8 @@ PY
 }
 
 snapshot_paths() {
-  local sync_repo="$1"
-  python3 - "$sync_repo" <<'PY'
+  local jj_repo_folder="$1"
+  python3 - "$jj_repo_folder" <<'PY'
 import hashlib, json, pathlib, sys
 repo = pathlib.Path(sys.argv[1])
 # same exclusions as e2e_mirror_sha256_index (abbreviated)
@@ -146,9 +146,9 @@ DOJO_ID="$(echo "$OUT" | sed -n 's/.*created dojo \([^ ;]*\).*/\1/p')"
 rm -rf "$CLONE"
 mkdir -p "$CLONE"
 e2e_cold_join "$DOJJO_HOME_B" "$DOJO_ID" "$CLONE" "clone" "$NEUTRAL"
-SYNC_REPO_A="$(e2e_physical_sync_repo "$DOJJO_HOME_A" "$DOJO_ID")"
-SYNC_REPO_B="$(e2e_physical_sync_repo "$DOJJO_HOME_B" "$DOJO_ID")"
-GIT_DIR_A="$(e2e_resolve_git_dir_from_repo "$SYNC_REPO_A")"
+DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A="$(e2e_default_workspace_jj_repo_folder "$DOJJO_HOME_A" "$DOJO_ID")"
+DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B="$(e2e_default_workspace_jj_repo_folder "$DOJJO_HOME_B" "$DOJO_ID")"
+GIT_DIR_A="$(e2e_resolve_git_dir_from_repo "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A")"
 GIT_URL="$(e2e_fetch_git_remote_url "$DOJJO_API_BASE" "$DOJO_ID")"
 
 for _ in 1 2 3; do
@@ -157,34 +157,34 @@ for _ in 1 2 3; do
 done
 
 OP_ID="$(cd "$ORIGIN" && "$JJ" op log -n 1 --no-graph -T 'id' | tr -d '[:space:]')"
-emit_obs "setup" "converged" "{\"op_id\":\"$OP_ID\",\"sync_repo_a\":\"$SYNC_REPO_A\"}"
+emit_obs "setup" "converged" "{\"op_id\":\"$OP_ID\",\"jj_repo_folder_a\":\"$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A\"}"
 
 # --- Experiment 1: A sync twice, no B, no jj between ---
 emit_obs "exp1" "begin" "{\"sequence\":\"A_sync,A_sync_no_jj_between\"}"
 
 run_sync_debug "$DOJJO_HOME_A" "$ORIGIN"
 append_sync_debug "exp1_A1"
-PATHS_A1="$(snapshot_paths "$SYNC_REPO_A")"
-HEADS_A1="$(snapshot_op_heads "$SYNC_REPO_A")"
+PATHS_A1="$(snapshot_paths "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A")"
+HEADS_A1="$(snapshot_op_heads "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A")"
 emit_obs "exp1" "after_A1" "{\"paths\":$PATHS_A1,\"op_heads\":$HEADS_A1}"
 
-IDX_BETWEEN="$(e2e_mirror_sha256_index "$SYNC_REPO_A")"
+IDX_BETWEEN="$(e2e_mirror_sha256_index "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A")"
 emit_obs "exp1" "between_A1_A2_e2e_index" "$IDX_BETWEEN"
 
-HEADS_BEFORE_JJ="$(count_extra_heads "$SYNC_REPO_A")"
-OP_HEADS_BEFORE="$(snapshot_op_heads "$SYNC_REPO_A")"
+HEADS_BEFORE_JJ="$(count_extra_heads "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A")"
+OP_HEADS_BEFORE="$(snapshot_op_heads "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A")"
 (cd "$ORIGIN" && "$JJ" op log -n 1 --no-graph -T 'id' >/dev/null)
-HEADS_AFTER_JJ="$(count_extra_heads "$SYNC_REPO_A")"
-OP_HEADS_AFTER="$(snapshot_op_heads "$SYNC_REPO_A")"
-IDX_AFTER_JJ="$(e2e_mirror_sha256_index "$SYNC_REPO_A")"
+HEADS_AFTER_JJ="$(count_extra_heads "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A")"
+OP_HEADS_AFTER="$(snapshot_op_heads "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A")"
+IDX_AFTER_JJ="$(e2e_mirror_sha256_index "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A")"
 emit_obs "exp1" "jj_op_log_between_syncs" "{\"heads_before\":$HEADS_BEFORE_JJ,\"heads_after\":$HEADS_AFTER_JJ,\"op_heads_before\":$OP_HEADS_BEFORE,\"op_heads_after\":$OP_HEADS_AFTER}"
 emit_obs "exp1" "after_jj_op_log_e2e_index" "$IDX_AFTER_JJ"
 
 # No jj, no sleep, no B — immediate second sync
 run_sync_debug "$DOJJO_HOME_A" "$ORIGIN"
 append_sync_debug "exp1_A2"
-PATHS_A2="$(snapshot_paths "$SYNC_REPO_A")"
-HEADS_A2="$(snapshot_op_heads "$SYNC_REPO_A")"
+PATHS_A2="$(snapshot_paths "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A")"
+HEADS_A2="$(snapshot_op_heads "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A")"
 emit_obs "exp1" "after_A2" "{\"paths\":$PATHS_A2,\"op_heads\":$HEADS_A2}"
 
 python3 - "$PROVE_OUT" <<'PY'
@@ -275,9 +275,9 @@ emit_obs "exp3" "begin" "{\"sequence\":\"git_push_fetch_index_diff_when_refs_ali
 NEED_PUSH="$(cd "$ORIGIN" && python3 -c 'print(0)' )"
 # use dojjo's logic via debug start from a no-op sync probe - run sync debug and read start
 run_sync_debug "$DOJJO_HOME_A" "$ORIGIN"
-python3 - "$PROVE_OUT" "${ROOT}/target/idle-sync-last-debug.ndjson" "$SYNC_REPO_A" "$GIT_DIR_A" "$GIT_URL" <<'PY'
+python3 - "$PROVE_OUT" "${ROOT}/target/idle-sync-last-debug.ndjson" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A" "$GIT_DIR_A" "$GIT_URL" <<'PY'
 import json, subprocess, sys, hashlib, pathlib
-prove, debug_path, sync_repo, git_dir, git_url = sys.argv[1:6]
+prove, debug_path, jj_repo_folder, git_dir, git_url = sys.argv[1:6]
 lines = [json.loads(l) for l in open(debug_path) if l.strip()]
 start = next(l for l in lines if l["phase"] == "start")
 print("=== EXPERIMENT 3: Git leg when manifest thinks refs aligned ===")
@@ -309,14 +309,14 @@ def index(repo):
             out[slash] = hashlib.sha256(ent.read_bytes()).hexdigest()
     return out
 
-idx0 = index(sync_repo)
+idx0 = index(jj_repo_folder)
 subprocess.run(["git", "--git-dir", git_dir, "push", "--no-progress", "dojjo", "+refs/*:refs/*"],
                check=False, capture_output=True)
-idx_push = index(sync_repo)
+idx_push = index(jj_repo_folder)
 subprocess.run(["git", "--git-dir", git_dir, "fetch", "--prune", "--no-progress", "dojjo",
                 "+refs/heads/*:refs/remotes/dojjo/*", "+refs/tags/*:refs/tags/*", "+refs/jj/*:refs/jj/*"],
                check=False, capture_output=True)
-idx_fetch = index(sync_repo)
+idx_fetch = index(jj_repo_folder)
 def diff(a,b):
     keys = sorted(set(a)|set(b))
     return [k for k in keys if a.get(k)!=b.get(k)]

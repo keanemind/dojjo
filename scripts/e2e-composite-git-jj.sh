@@ -2,7 +2,7 @@
 # Composite Git + JJ sync: two simulated clients (DOJJO_HOME_A / DOJJO_HOME_B), git transport
 # Composite sync: Git HTTP for store/git/, JJ mirror for the rest of .jj/repo.
 #
-# Acceptance bar: distinct physical sync-host inodes; bridge-only visibility until B syncs;
+# Acceptance bar: distinct physical local-repo inodes; bridge-only visibility until B syncs;
 # bidirectional convergence. Lighter smoke: scripts/e2e-mvp.sh (same harness).
 # See README.md and docs/DEVELOPMENT.md.
 set -euo pipefail
@@ -71,8 +71,8 @@ run_two_peer_sync() {
     exit 1
   fi
 
-  SYNC_REPO_A="$(e2e_physical_sync_repo "$DOJJO_HOME_A" "$DOJO_ID")"
-  echo "peer A sync repo: $SYNC_REPO_A"
+  DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A="$(e2e_default_workspace_jj_repo_folder "$DOJJO_HOME_A" "$DOJO_ID")"
+  echo "peer A local repo: $DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A"
 
   GIT_REMOTE_URL="$(e2e_fetch_git_remote_url "$DOJJO_API_BASE" "$DOJO_ID")"
   echo "git remote: $GIT_REMOTE_URL"
@@ -86,14 +86,14 @@ run_two_peer_sync() {
   mkdir -p "$CLONE"
   e2e_cold_join "$DOJJO_HOME_B" "$DOJO_ID" "$CLONE" "$PEER_B_NAME" "$NEUTRAL"
 
-  SYNC_REPO_B="$(e2e_physical_sync_repo "$DOJJO_HOME_B" "$DOJO_ID")"
-  echo "peer B sync repo: $SYNC_REPO_B"
-  e2e_assert_distinct_paths "$SYNC_REPO_A" "$SYNC_REPO_B"
+  DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B="$(e2e_default_workspace_jj_repo_folder "$DOJJO_HOME_B" "$DOJO_ID")"
+  echo "peer B local repo: $DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B"
+  e2e_assert_distinct_paths "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B"
 
   e2e_assert_jj_repo_usable "$ORIGIN"
   e2e_assert_jj_repo_usable "$CLONE"
-  e2e_assert_git_dir_usable "$(e2e_resolve_git_dir_from_repo "$SYNC_REPO_A")"
-  e2e_assert_git_dir_usable "$(e2e_resolve_git_dir_from_repo "$SYNC_REPO_B")"
+  e2e_assert_git_dir_usable "$(e2e_resolve_git_dir_from_repo "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A")"
+  e2e_assert_git_dir_usable "$(e2e_resolve_git_dir_from_repo "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B")"
   e2e_assert_manifest_no_git_objects "$DOJJO_API_BASE" "$DOJO_ID"
   e2e_assert_manifest_no_workspace_store "$DOJJO_API_BASE" "$DOJO_ID"
 
@@ -124,7 +124,7 @@ run_two_peer_sync() {
     exit 1
   fi
 
-  e2e_assert_peers_converged "$ORIGIN" "$CLONE" "$label" "$SYNC_REPO_A" "$SYNC_REPO_B"
+  e2e_assert_peers_converged "$ORIGIN" "$CLONE" "$label" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B"
 
   echo "from-clone" >> "${CLONE}/README.md"
   (cd "$CLONE" && "$JJ" commit -m "clone edit")
@@ -137,7 +137,7 @@ run_two_peer_sync() {
   e2e_assert_manifest_no_git_objects "$DOJJO_API_BASE" "$DOJO_ID"
   e2e_assert_manifest_no_workspace_store "$DOJJO_API_BASE" "$DOJO_ID"
 
-  e2e_assert_peers_converged "$ORIGIN" "$CLONE" "$label" "$SYNC_REPO_A" "$SYNC_REPO_B"
+  e2e_assert_peers_converged "$ORIGIN" "$CLONE" "$label" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_A" "$DEFAULT_WORKSPACE_JJ_REPO_FOLDER_B"
 
   e2e_stop_server
   echo "=== ${label} OK ==="

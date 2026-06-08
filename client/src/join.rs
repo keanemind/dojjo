@@ -61,7 +61,7 @@ fn assert_cwd_not_jj_workspace(cwd: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// True when this machine finished a prior create/join: config, sync repo, and loadable sync host.
+/// True when this machine finished a prior create/join: config, local repo, and loadable default workspace.
 fn is_local_dojo_join_ready(dojo_home: &Path) -> anyhow::Result<bool> {
     assert!(dojo_home.as_os_str().len() > 0, "dojo_home must not be empty");
     if !config::is_dojo_create_complete(dojo_home) {
@@ -69,7 +69,7 @@ fn is_local_dojo_join_ready(dojo_home: &Path) -> anyhow::Result<bool> {
     }
     let existing = config::load_config(dojo_home)?;
     assert!(!existing.dojo_id.is_empty(), "dojo_id in config must not be empty");
-    let _sync_repo = config::sync_repo_root(dojo_home)?;
+    let _jj_repo_folder = config::default_workspace_jj_repo_folder(dojo_home)?;
     let default_ws = config::default_workspace_root(dojo_home);
     Ok(workspace_lifecycle::has_working_copy(&default_ws))
 }
@@ -87,32 +87,32 @@ async fn run_cold_join(
     client: &Client,
     dojo_home: &Path,
     dojo_id: &str,
-    sync_repo: &Path,
+    jj_repo_folder: &Path,
     api_base: &str,
     git_remote_url: &str,
 ) -> anyhow::Result<()> {
     assert!(dojo_home.as_os_str().len() > 0, "dojo_home must not be empty");
-    assert!(sync_repo.is_dir(), "sync_repo must be a directory");
+    assert!(jj_repo_folder.is_dir(), "jj_repo_folder must be a directory");
     anyhow::ensure!(!dojo_id.is_empty(), "dojo_id must not be empty");
     assert!(!api_base.is_empty(), "api_base must not be empty");
     assert!(!git_remote_url.is_empty(), "git_remote_url must not be empty");
 
-    let pulled = pull_mirror_into_repo(client, api_base, dojo_id, sync_repo).await?;
+    let pulled = pull_mirror_into_repo(client, api_base, dojo_id, jj_repo_folder).await?;
     if pulled > 0 {
-        println!("pulled {pulled} mirror objects into sync repo…");
+        println!("pulled {pulled} mirror objects into local repo…");
     }
 
-    let sync_repo = config::sync_repo_root(dojo_home)?;
-    workspace_lifecycle::write_host_git_target(&sync_repo).context("write host git_target")?;
-    let sync_host = workspace_lifecycle::bootstrap_sync_host_after_pull(dojo_home)?;
-    if sync_host.join(".git").is_dir() {
-        jj_exec::git_colocation_disable(&sync_host).context("jj git colocation disable on sync host")?;
+    let jj_repo_folder = config::default_workspace_jj_repo_folder(dojo_home)?;
+    workspace_lifecycle::write_host_git_target(&jj_repo_folder).context("write host git_target")?;
+    let default_ws = workspace_lifecycle::bootstrap_default_workspace_after_pull(dojo_home)?;
+    if default_ws.join(".git").is_dir() {
+        jj_exec::git_colocation_disable(&default_ws).context("jj git colocation disable in local repo")?;
     }
-    workspace_lifecycle::ensure_sync_host_non_colocated_git(&sync_repo)
-        .context("non-colocated git store on sync host")?;
+    workspace_lifecycle::ensure_local_repo_non_colocated_git(&jj_repo_folder)
+        .context("non-colocated git store in local repo")?;
 
     // Git objects are not in the JJ mirror; fetch before any `jj` command touches the repo.
-    let git_dir = crate::git_sync::resolve_jj_backed_git_dir(&sync_repo)?;
+    let git_dir = crate::git_sync::resolve_jj_backed_git_dir(&jj_repo_folder)?;
     crate::git_sync::git_fetch_dojjo(&git_dir, git_remote_url)
         .await
         .context("git fetch from dojjo bare remote (after JJ mirror)")?;
@@ -158,10 +158,10 @@ fn finish_join(
     config::write_workspace_link(&user_jj, dojo_id).context("write workspace dojjo link")?;
     background_sync::ensure_worker_running(dojo_home).context("start background sync worker")?;
 
-    let sync_repo = config::sync_repo_root(dojo_home)?;
+    let jj_repo_folder = config::default_workspace_jj_repo_folder(dojo_home)?;
     if warm {
         println!(
-            "warm join: added workspace {workspace_name} at {} (shared sync repo unchanged)",
+            "warm join: added workspace {workspace_name} at {} (shared local repo unchanged)",
             into.display()
         );
     } else {
@@ -170,7 +170,7 @@ fn finish_join(
             into.display()
         );
     }
-    println!("sync repo {}", sync_repo.display());
+    println!("local repo {}", jj_repo_folder.display());
     println!("config {}", config::dojo_config_path(dojo_home).display());
     println!(
         "{}",
@@ -227,26 +227,26 @@ pub async fn run(
         return Ok(());
     }
 
-    let sync_jj = config::default_workspace_root(&dojo_home).join(".jj");
-    std::fs::create_dir_all(&sync_jj)
-        .with_context(|| format!("create_dir_all {}", sync_jj.display()))?;
+    let default_workspace_jj_dir = config::default_workspace_root(&dojo_home).join(".jj");
+    std::fs::create_dir_all(&default_workspace_jj_dir)
+        .with_context(|| format!("create_dir_all {}", default_workspace_jj_dir.display()))?;
 
-    let sync_repo = match config::sync_repo_root(&dojo_home) {
+    let jj_repo_folder = match config::default_workspace_jj_repo_folder(&dojo_home) {
         Ok(p) => p,
         Err(_) => {
-            let sync_repo = sync_jj.join("repo");
-            std::fs::create_dir_all(&sync_repo)
-                .with_context(|| format!("create_dir_all {}", sync_repo.display()))?;
-            sync_repo
+            let jj_repo_folder = default_workspace_jj_dir.join("repo");
+            std::fs::create_dir_all(&jj_repo_folder)
+                .with_context(|| format!("create_dir_all {}", jj_repo_folder.display()))?;
+            jj_repo_folder
         }
     };
-    assert!(sync_repo.is_dir(), "sync repo must be a directory");
+    assert!(jj_repo_folder.is_dir(), "local repo must be a directory");
 
     run_cold_join(
         client,
         &dojo_home,
         dojo_id,
-        &sync_repo,
+        &jj_repo_folder,
         &api_base,
         &public.git_remote_url,
     )
@@ -268,15 +268,15 @@ mod tests {
     }
 
     #[test]
-    fn is_local_dojo_join_ready_true_with_config_sync_repo_and_working_copy() {
+    fn is_local_dojo_join_ready_true_with_config_jj_repo_folder_and_working_copy() {
         let dir = tempdir().unwrap();
         let dojo_home = dir.path().join("dojos").join("d1");
         let default_ws = config::default_workspace_root(&dojo_home);
-        let sync_jj = default_ws.join(".jj");
-        let sync_repo = sync_jj.join("repo");
-        std::fs::create_dir_all(&sync_repo).unwrap();
-        std::fs::create_dir_all(sync_jj.join("working_copy")).unwrap();
-        std::fs::write(sync_jj.join("working_copy").join("type"), "local").unwrap();
+        let default_workspace_jj_dir = default_ws.join(".jj");
+        let jj_repo_folder = default_workspace_jj_dir.join("repo");
+        std::fs::create_dir_all(&jj_repo_folder).unwrap();
+        std::fs::create_dir_all(default_workspace_jj_dir.join("working_copy")).unwrap();
+        std::fs::write(default_workspace_jj_dir.join("working_copy").join("type"), "local").unwrap();
 
         let cfg = DojoConfig {
             dojo_id: "d1".to_string(),
