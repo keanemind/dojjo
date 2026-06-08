@@ -306,6 +306,8 @@ pub fn cold_join_user_workspace(
         default_ws.as_os_str().len() > 0,
         "default workspace path must be non-empty"
     );
+    ensure_default_workspace_sparse_empty(&default_ws)
+        .context("sparse-empty default workspace before user workspace add")?;
 
     if jj_exec::workspace_exists_at_repository(&default_ws, workspace_name)? {
         anyhow::bail!(
@@ -348,6 +350,30 @@ pub fn bootstrap_default_workspace_after_pull(dojo_home: &Path) -> anyhow::Resul
         "default workspace must have working_copy after bootstrap"
     );
     Ok(default_ws)
+}
+
+/// Match create: sentinel `default` at `_default` must have empty sparse patterns.
+pub fn ensure_default_workspace_sparse_empty(default_ws: &Path) -> anyhow::Result<()> {
+    assert!(default_ws.as_os_str().len() > 0, "default_ws must not be empty");
+    if !has_working_copy(default_ws) {
+        return Ok(());
+    }
+    let patterns = jj_exec::workspace_sparse_list(default_ws)?;
+    if patterns.is_empty() {
+        return Ok(());
+    }
+    jj_exec::workspace_set_sparse_empty(default_ws).with_context(|| {
+        format!(
+            "sparse-empty sentinel default workspace at {}",
+            default_ws.display()
+        )
+    })?;
+    let patterns_after = jj_exec::workspace_sparse_list(default_ws)?;
+    assert!(
+        patterns_after.is_empty(),
+        "default workspace sparse patterns must be empty after set --clear"
+    );
+    Ok(())
 }
 
 fn ensure_sentinel_default_workspace_registered(dojo_home: &Path) -> anyhow::Result<()> {

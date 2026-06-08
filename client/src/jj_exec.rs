@@ -84,6 +84,31 @@ pub fn run_jj_with_repository(repo_workspace: &Path, args: &[&str]) -> anyhow::R
     run_jj_ok(repo_workspace, &full)
 }
 
+/// Sparse patterns from `jj sparse list` (empty vec = completely sparse checkout).
+pub fn workspace_sparse_list(workspace: &Path) -> anyhow::Result<Vec<String>> {
+    assert!(workspace.as_os_str().len() > 0, "workspace must not be empty");
+    let out = run_jj(workspace, &["sparse", "list"])?;
+    anyhow::ensure!(
+        out.status.success(),
+        "jj sparse list failed (cwd {}): {}",
+        workspace.display(),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let patterns: Vec<String> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect();
+    Ok(patterns)
+}
+
+/// Clear all sparse patterns so no project files are present in the working copy.
+pub fn workspace_set_sparse_empty(workspace: &Path) -> anyhow::Result<()> {
+    assert!(workspace.as_os_str().len() > 0, "workspace must not be empty");
+    run_jj_ok(workspace, &["sparse", "set", "--clear"])
+}
+
 /// `jj workspace add` with empty sparse patterns and `@` on `root()`.
 pub fn workspace_add_frozen_default(
     from_workspace: &Path,
